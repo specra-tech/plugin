@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "specra": {
+      "type": "http",
+      "url": "https://specra.tech/mcp",
+      "note": "Local Specra MCP server for plugin development. Supports project context loading, UI validation, and the specra-generate local screenshot workflow."
+    }
+  }
+}

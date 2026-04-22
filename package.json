@@ -1,0 +1,16 @@
+{
+  "name": "specra",
+  "version": "0.1.0",
+  "description": "Ground UI generation in reference screenshots with Specra MCP.",
+  "type": "module",
+  "scripts": {
+    "capture": "node scripts/capture-preview.mjs",
+    "inspect": "node scripts/inspect-preview.mjs"
+  },
+  "dependencies": {
+    "playwright": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest"
+  }
+}

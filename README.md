@@ -1,0 +1,59 @@
+# Specra
+
+Specra helps agents build and refine UI from reference screenshots with grounded MCP workflows.
+
+It is designed for product and frontend work where visual quality matters: matching an existing design system, tightening an implemented screen, or generating a new surface that stays aligned with real references instead of drifting into generic output.
+
+## What Specra does
+
+Specra gives agents a structured UI workflow:
+
+- connect a repo to a Specra project
+- load the current design handoff
+- generate or refine UI in code
+- validate the result against the handoff
+- use local screenshot-based evaluation before closing out
+
+The primary end-to-end workflow is `specra-generate`.
+
+## Included workflows
+
+This plugin includes skills for:
+
+- `specra-generate`: default end-to-end UI generation and refinement flow
+- `evaluate-ui`: screenshot-based evaluation of an implemented screen
+- `fix-ui-drift`: targeted repair when the UI is close but off-hand-off
+- `connect-project`: verify repo connection and project readiness
+- `local-preview`: discover or verify the local preview used for evaluation
+- `map-ui-to-code`: map visible UI regions back to source files
+- `region-targeting`: resolve a selected preview region into a concrete code target
+
+## Best fit
+
+Specra is a good fit when you want an agent to:
+
+- build a screen from reference material
+- refine an existing interface without losing the product’s visual language
+- validate UI changes against a grounded handoff
+- turn screenshot feedback into concrete code edits
+
+It is not primarily a general-purpose design inspiration tool. It is for implementation-grounded UI work.
+
+## Example prompts
+
+- Use `specra-generate` to build a dashboard that matches this project’s references
+- Evaluate this implemented screen against the current Specra handoff
+- Tighten this UI to match the project’s extracted design system
+- Map this visible panel back to the source component
+
+## Local screenshot evaluation
+
+Some workflows rely on local screenshot capture for visual verification. If needed, install Playwright Chromium once on the machine using your preferred package runner, for example:
+
+```bash
+bunx playwright install chromium
+```
+
+## Plugin surfaces
+
+This package includes plugin manifests for supported clients and a shared MCP configuration used by the Specra workflows.

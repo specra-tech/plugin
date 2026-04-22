@@ -1,0 +1,42 @@
+{
+  "name": "specra",
+  "version": "0.1.0",
+  "description": "Ground UI generation in reference screenshots with Specra MCP.",
+  "author": {
+    "name": "Specra",
+    "url": "https://specra.tech"
+  },
+  "homepage": "https://specra.tech",
+  "repository": "https://github.com/lanc33llis/specra",
+  "license": "MIT",
+  "keywords": [
+    "specra",
+    "design-system",
+    "ui",
+    "mcp",
+    "frontend",
+    "tailwind",
+    "shadcn"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Specra",
+    "shortDescription": "Build and refine UI from reference screenshots with grounded MCP workflows",
+    "longDescription": "Use Specra to extract structure, implementation rules, and reusable component patterns from reference screenshots, then ground generation and validation through Specra MCP tools. For normal UI builds, use the primary specra-generate skill so the full loop runs: handoff load, implementation, code validation, local screenshot evaluation, and the finish gate.",
+    "developerName": "Specra",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://specra.tech",
+    "defaultPrompt": [
+      "Use specra-generate to build a dashboard that matches this project's references",
+      "Evaluate this implemented screen against the extracted Specra system",
+      "Tighten this UI to match the project's Specra handoff"
+    ],
+    "brandColor": "#0f172a",
+    "screenshots": []
+  }
+}

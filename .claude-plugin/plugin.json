@@ -1,0 +1,23 @@
+{
+  "name": "specra",
+  "version": "0.1.0",
+  "description": "Ground UI generation in reference screenshots with Specra MCP. Use specra-generate as the primary end-to-end UI workflow.",
+  "author": {
+    "name": "Specra",
+    "url": "https://specra.tech"
+  },
+  "homepage": "https://specra.tech",
+  "repository": "https://github.com/lanc33llis/specra",
+  "license": "MIT",
+  "keywords": [
+    "specra",
+    "design-system",
+    "ui",
+    "mcp",
+    "frontend",
+    "tailwind",
+    "shadcn"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}
