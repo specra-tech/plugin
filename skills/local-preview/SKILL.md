@@ -73,6 +73,9 @@ When screenshot-based evaluation is needed for a local preview, prefer a local c
 - then run `../../scripts/local-evaluate-loop.ts prepare-broad` with the resulting absolute screenshot path
 - then run `../../scripts/local-evaluate-loop.ts guide-broad --repo <repoPath>` after the client LLM returns the required JSON so the repo-local evaluation artifact is written
 - do not run global filesystem searches such as `find $HOME -path '*capture-preview.mjs'`; use the known Specra script path directly
+- capture viewport frames only; do not use full-page screenshots or oversized desktop viewports for app or dashboard UI
+- default captures to `1320x800` unless matching the user's reported visible browser viewport; do not use `900px`-plus or `1200px`-tall captures for normal dashboard review
+- if the issue is below the fold, capture an additional viewport frame with `--scroll-y <cssPixels>` instead of compressing the full page into one image
 
 Keep the screenshot loop local:
 

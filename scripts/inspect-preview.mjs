@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-
 import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -10,8 +9,12 @@ import {
   runPlaywrightCli,
 } from "./playwright-runner.mjs";
 
+const DEFAULT_VIEWPORT_WIDTH = 1320;
+const DEFAULT_VIEWPORT_HEIGHT = 800;
+
 function printUsage() {
-  console.error(`
+  console.error(
+    `
 Usage:
   node scripts/inspect-preview.mjs --url http://localhost:3000
   node scripts/inspect-preview.mjs --html-file .specra/captures/generated-preview.html
@@ -24,11 +27,12 @@ Options:
   --out <path>           Optional output path. Defaults to .specra/captures/inspection-<timestamp>.json
   --point <x,y>          Optional selected point in viewport CSS pixels.
   --bbox <x,y,w,h>       Optional selected bounding box in viewport CSS pixels.
-  --width <number>       Viewport width. Defaults to 1440.
-  --height <number>      Viewport height. Defaults to 1200.
+  --width <number>       Viewport width. Defaults to 1320.
+  --height <number>      Viewport height. Defaults to 800.
   --wait-ms <number>     Extra wait time after navigation. Defaults to 1200.
   --help                 Show this message.
-`.trim());
+`.trim(),
+  );
 }
 
 function parsePoint(value) {
@@ -68,9 +72,9 @@ function parseBbox(value) {
 
 function parseArgs(argv) {
   const parsed = {
-    height: 1200,
+    height: DEFAULT_VIEWPORT_HEIGHT,
     waitMs: 1200,
-    width: 1440,
+    width: DEFAULT_VIEWPORT_WIDTH,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -504,7 +508,8 @@ async function main() {
     console.log(
       JSON.stringify(
         {
-          htmlFile: target.sourceType === "html-file" ? target.sourcePath : undefined,
+          htmlFile:
+            target.sourceType === "html-file" ? target.sourcePath : undefined,
           outputPath,
           selectionBbox: parsed.selectionBbox,
           selectionPoint: parsed.selectionPoint,

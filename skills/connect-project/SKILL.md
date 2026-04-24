@@ -14,6 +14,7 @@ Leave the repo in a state where Specra-powered UI work can run reliably.
 That means:
 
 - the repo has a valid root `.specra.json`
+- future agent sessions have durable instructions to load Specra context automatically
 - the project ID is correct
 - if present, `previewUrl` and `devCommand` are sensible
 - Specra MCP is reachable
@@ -44,12 +45,42 @@ That means:
 6. If the repo is established and either dependency is missing, tell the user Specra requires them and ask for approval to install them before any UI implementation work begins.
 7. If the repo is greenfield or nearly empty, plan to scaffold with TailwindCSS and shadcn/ui by default.
 8. If the latest revision is missing any of the four required artifacts, tell the user to rerun analysis before UI generation work begins.
-9. If deterministic UI mapping is planned, add or verify stable `data-specra-id` markers on important UI regions.
+9. Add or update durable Specra agent instructions so future sessions do not require the user to ask for context loading again.
+10. If deterministic UI mapping is planned, add or verify stable `data-specra-id` markers on important UI regions.
+
+## Durable agent instructions
+
+When connecting a repo, create or update `.specra/agent-instructions.md` with repo-local guidance:
+
+```md
+# Specra Agent Instructions
+
+This repo is connected to Specra through `.specra.json`.
+
+For UI generation, UI refinement, visual evaluation, screenshot comparison, component implementation, or screen work:
+
+- Read `.specra.json`.
+- Use `projectId` as the Specra project ID unless the user explicitly provides another one.
+- Call `specra_load_project_context` before writing UI code.
+- Treat `theme.css`, `design-foundations.md`, `patterns.md`, and `features.md` as the current design handoff.
+- Reuse existing shadcn/ui primitives first.
+- Add missing common primitives through the repo's shadcn CLI path instead of hand-writing replacements.
+- Preserve default shadcn primitive sizing unless the user explicitly asks for a different component size.
+- Run `specra_validate_generated_ui` and a current local screenshot evaluation before claiming alignment.
+```
+
+If the repo has an agent instruction file such as `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md`, add a short pointer to `.specra/agent-instructions.md` instead of duplicating the full guidance:
+
+```md
+For Specra-connected UI work, read `.specra/agent-instructions.md` and load the Specra project context from `.specra.json` before implementation.
+```
 
 ## Rules
 
 - Treat `.specra.json` as the default source of truth for `project_id`.
 - Prefer `.specra.json` for preview setup when `previewUrl` or `devCommand` is present.
+- Treat `.specra/agent-instructions.md` as the durable cross-session hint for agents that start in this repo.
 - If MCP auth fails, report that clearly before blaming the project data.
 - If the revision is outdated, be explicit that the project must be reanalyzed.
 - Do not let the workflow continue into CSS-first implementation when TailwindCSS + shadcn/ui are the required stack.
+- Do not let a connected repo depend on chat memory alone. Persist enough instruction locally that a new session knows to load Specra context automatically.

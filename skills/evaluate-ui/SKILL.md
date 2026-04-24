@@ -72,6 +72,9 @@ Use screenshots plus the current handoff:
 Do not run global filesystem searches such as `find $HOME -path '*capture-preview.mjs'` or `find $HOME -path '*inspect-preview.mjs'` during the loop. Use the known Specra script paths directly.
 Keep the screenshot loop local and let the client LLM produce the JSON evaluation from the generated bundle. Do not route screenshot review back through the Specra MCP server.
 Do not use `curl`, raw HTML output, or `HTTP 200 OK` as a substitute for screenshot review. Those checks only confirm that the preview responds.
+Do not use full-page screenshots or oversized desktop viewports for app or dashboard evaluation. Capture the visible viewport only, defaulting to `1320x800` unless matching the user's reported visible browser viewport. Do not use `900px`-plus or `1200px`-tall captures for normal dashboard review. For below-the-fold regions, capture additional viewport frames with `--scroll-y <cssPixels>` and evaluate those frames as separate scroll positions.
+When judging scale, assume the first implementation is likely too large. Prefer findings that push typography, spacing, controls, tiles, and icons smaller/tighter when the reference is not clearly larger.
+Report the viewport size, scroll offset, and `fullPage: false` in the final evidence.
 
 ## Iteration limits
 

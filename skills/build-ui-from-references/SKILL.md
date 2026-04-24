@@ -19,6 +19,17 @@ Do not use this skill for non-UI work or for repos that are not connected to Spe
 For the actual workflow, follow the same end-to-end generation loop as `../specra-generate/SKILL.md`.
 If you only read this file, apply the same rules below as if you had loaded `specra-generate`.
 
+Important current rules from `specra-generate`:
+
+- If `.specra.json` exists, load Specra context before writing UI code. Do not wait for the user to ask separately in a new chat.
+- Read `.specra/agent-instructions.md` when present.
+- Reuse shadcn primitives or add missing ones through the repo's CLI path; do not hand-write fallbacks.
+- If a prompt allows plain CSS but also triggers Specra, follow Specra and scaffold TailwindCSS plus shadcn/ui.
+- Preserve default shadcn primitive sizing unless the user explicitly asks for a different component size.
+- Do not add `h-14`, `h-16`, `px-8`, `py-4`, `text-lg`, or `rounded-full` to Button, Input, Badge, or Card roots as a styling shortcut.
+- Make the UI smaller and tighter than your first instinct. Step typography, spacing, controls, tiles, and icons down one Tailwind size before screenshot evaluation unless the reference clearly supports the larger scale.
+- Close out with the loaded project ID, artifact status, shadcn primitive provenance, code validation result, and local screenshot evaluation gate status.
+
 ## Project discovery
 
 Before calling Specra tools, check for a repo-root `.specra.json`.
@@ -63,6 +74,8 @@ Then apply these rules:
 - Treat shared primitives as opinionated components, not as generic wrappers.
 - Avoid root-level `p-*`, `px-*`, `py-*`, `h-*`, `min-h-*`, and `w-*` overrides on `Card`, `Button`, `Badge`, `Input`, and similar primitives unless the primitive itself truly needs a different size contract.
 - Prefer layout wrappers and component substructure such as `CardHeader`, `CardContent`, and `CardFooter` when the real need is spacing or composition around the primitive.
+- Visual scale calibration: make the UI smaller and tighter than your first instinct. Prefer `text-base` over `text-lg` for operational labels, `text-2xl` over larger panel headings, `gap-4`/`gap-6` over `gap-10`/`gap-16`, default or `sm` shadcn controls over custom large controls, and compact icon/avatar sizes unless the reference clearly shows larger elements.
+- If a screenshot looks better only because it was captured from far away or scaled down in preview, the implementation is too large. Fix the UI scale instead of relying on capture scale.
 - Keep route files thin and compositional. Do not build an entire screen inline in `page.tsx` when it can be broken into reusable layout and region components.
 - Extract repeated or structurally meaningful screen regions into local feature components such as `layout`, `sidebar`, `header`, `table`, `panel`, `list`, or `metric-card`.
 - Only move something into shared `@specra/ui` when it is a true design-system primitive or broadly reusable across screens.
@@ -151,6 +164,19 @@ For localhost previews, prefer local capture on the user machine:
 5. run `../../scripts/local-evaluate-loop.ts guide-broad --repo <repoPath>`
 
 The screenshot loop should stay local. Do not route normal screenshot evaluation back through the Specra MCP server.
+
+Capture viewport frames only. Do not use full-page screenshots or oversized desktop viewports for app or dashboard UI evaluation because tall screenshots get scaled down in previews and hide real sizing problems. Default to `1320x800` unless matching the user's reported visible browser viewport. Do not use `900px`-plus or `1200px`-tall captures for normal dashboard review.
+
+When below-the-fold content matters, handle scrolling by capturing additional viewport frames with explicit scroll offsets:
+
+```bash
+../../scripts/capture-preview.mjs --url <previewUrl> --width 1320 --height 800 --out .specra/captures/top.png
+../../scripts/capture-preview.mjs --url <previewUrl> --width 1320 --height 800 --scroll-y 650 --out .specra/captures/mid.png
+```
+
+Evaluate each important viewport frame separately. Use the first visible viewport as the default alignment gate for dashboard and app screens, then use scrolled frames for specific below-the-fold regions.
+
+Closeout must report the capture viewport, scroll offset, and that `fullPage` was false.
 
 Do not run global filesystem searches such as `find $HOME -path '*capture-preview.mjs'` to rediscover the capture script. Use the known Specra script path directly.
 

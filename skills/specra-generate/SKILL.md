@@ -61,6 +61,18 @@ Rules:
 - If `devCommand` exists, treat it as the preferred start command.
 - If the file is missing, ask the user for the project ID or tell them to add it.
 
+## Context autoload contract
+
+Specra context must be loaded automatically for UI work.
+
+Rules:
+
+- If a repo has `.specra.json` and the user asks for UI generation, UI refinement, visual evaluation, screenshot comparison, component implementation, or screen work, read `.specra.json` and call `specra_load_project_context` before writing UI code.
+- Do not wait for the user to separately ask you to "pull Specra context" in a new chat.
+- Treat `.specra.json` as the durable pointer across sessions. If it exists, use its `projectId` unless the user explicitly gives a different project ID.
+- If a repo also has `.specra/agent-instructions.md`, read it before implementation and treat it as repo-local Specra guidance.
+- If `.specra.json` exists but no durable agent instructions are present, continue with `specra_load_project_context` and mention in closeout that `connect-project` can add durable session instructions.
+
 ## Implementation gate
 
 Before writing or scaffolding UI code, inspect the repo and classify it:
@@ -73,6 +85,7 @@ Before writing or scaffolding UI code, inspect the repo and classify it:
 Then apply these rules:
 
 - TailwindCSS and shadcn/ui are required for Specra implementation work.
+- If the user prompt allows local CSS, plain CSS, CSS modules, or "whatever is fastest," treat that as lower priority than the Specra contract. Use TailwindCSS and shadcn/ui unless the user explicitly says not to use Specra's required stack.
 - If the repo is established and TailwindCSS or shadcn/ui is missing, prompt the user to install the missing requirement before continuing.
 - If the user refuses, stop and do not scaffold or implement the UI anyway.
 - If the repo is greenfield or nearly empty, scaffold with TailwindCSS and shadcn/ui by default.
@@ -83,11 +96,17 @@ Then apply these rules:
 - If the shared `@specra/ui` or shadcn CLI path is broken, stop and repair that setup before continuing. Do not work around it by generating local copies of `button.tsx`, `card.tsx`, `badge.tsx`, `input.tsx`, or similar files in app code.
 - Treat shared primitives as opinionated components, not as generic wrappers.
 - Avoid root-level `p-*`, `px-*`, `py-*`, `h-*`, `min-h-*`, and `w-*` overrides on `Card`, `Button`, `Badge`, `Input`, and similar primitives unless the primitive itself truly needs a different size contract.
+- Do not enlarge shadcn primitive roots just to make a screen feel more custom. Avoid `h-14`, `h-16`, `px-8`, `py-4`, `text-lg`, `rounded-full`, and custom oversized size props on `Button`, `Input`, `Badge`, and `Card` unless the user explicitly requests that component size.
+- Prefer the default shadcn size variants first. Put large visual scale in surrounding layout, copy hierarchy, grid structure, or feature-local wrappers, not in the primitive root.
 - Prefer layout wrappers and component substructure such as `CardHeader`, `CardContent`, and `CardFooter` when the real need is spacing or composition around the primitive.
+- Visual scale calibration: make the UI smaller and tighter than your first instinct. Before the first screenshot pass, step typography, spacing, controls, tiles, and icons down one Tailwind size unless the reference clearly supports the larger scale.
+- Prefer `text-base` over `text-lg` for operational labels, `text-2xl` over larger panel headings, `gap-4`/`gap-6` over `gap-10`/`gap-16`, default or `sm` shadcn controls over custom large controls, and compact icon/avatar sizes.
+- If a screenshot looks better only because it was captured from far away or scaled down in preview, the implementation is too large. Fix the UI scale instead of relying on capture scale.
 - Keep route files thin and compositional. Do not build an entire screen inline in `page.tsx` when it can be broken into reusable layout and region components.
 - Extract repeated or structurally meaningful screen regions into local feature components such as `layout`, `sidebar`, `header`, `table`, `panel`, `list`, or `metric-card`.
 - Only move something into shared `@specra/ui` when it is a true design-system primitive or broadly reusable across screens.
 - Do not choose a CSS-first or bespoke styling path when Specra is the workflow.
+- Do not ship a standalone React app that uses only `styles.css`, CSS modules, or hand-authored raw controls as a Specra implementation. That is an opt-out from the Specra workflow unless the user explicitly asked to ignore the required stack.
 - Do not treat Tailwind-oriented feedback as optional or irrelevant. If the implementation stack makes Specra validation nonsensical, the stack choice was wrong.
 
 ## Current artifact model
@@ -112,16 +131,17 @@ If the user asks to inspect a specific handoff artifact directly, call `specra_g
 For normal UI implementation work, use this order:
 
 1. confirm the repo is connected through `.specra.json`
-2. inspect the repo and pass the TailwindCSS + shadcn/ui implementation gate
+2. read `.specra/agent-instructions.md` if present
 3. call `specra_load_project_context` so the current handoff is actually loaded before implementation starts
    This tool now inlines up to 4 resized reference screenshots by default. Leave the defaults alone unless you need to reduce image context further.
-4. generate or edit the UI in code using the loaded handoff as the source of truth
-5. run `specra_validate_generated_ui`
-6. capture a fresh screenshot and run `../../scripts/local-evaluate-loop.ts prepare-broad`
-7. have the client LLM return JSON matching `expected_output_contract`, then run `../../scripts/local-evaluate-loop.ts guide-broad --repo <repoPath>`
-8. when the broad result stops and `shouldRunMicroPolish` is true, run `../../scripts/local-evaluate-loop.ts prepare-micro` on a fresh screenshot by default, then `guide-micro --repo <repoPath>`
-9. apply the smallest useful fix, recapture, and re-evaluate if needed
-10. if drift remains, run `specra_suggest_ui_fix`
+4. inspect the repo and pass the TailwindCSS + shadcn/ui implementation gate
+5. generate or edit the UI in code using the loaded handoff as the source of truth
+6. run `specra_validate_generated_ui`
+7. capture a fresh screenshot and run `../../scripts/local-evaluate-loop.ts prepare-broad`
+8. have the client LLM return JSON matching `expected_output_contract`, then run `../../scripts/local-evaluate-loop.ts guide-broad --repo <repoPath>`
+9. when the broad result stops and `shouldRunMicroPolish` is true, run `../../scripts/local-evaluate-loop.ts prepare-micro` on a fresh screenshot by default, then `guide-micro --repo <repoPath>`
+10. apply the smallest useful fix, recapture, and re-evaluate if needed
+11. if drift remains, run `specra_suggest_ui_fix`
 
 Use `specra_map_ui_to_code` when a visible issue needs to be mapped back to a specific file or component.
 
@@ -173,6 +193,19 @@ For localhost previews, prefer local capture on the user machine:
 
 The screenshot loop should stay local. Do not route normal screenshot evaluation back through the Specra MCP server.
 
+Capture viewport frames only. Do not use full-page screenshots or oversized desktop viewports for app or dashboard UI evaluation because tall screenshots get scaled down in previews and hide real sizing problems. Default to `1320x800` unless matching the user's reported visible browser viewport. Do not use `900px`-plus or `1200px`-tall captures for normal dashboard review.
+
+When below-the-fold content matters, handle scrolling by capturing additional viewport frames with explicit scroll offsets:
+
+```bash
+../../scripts/capture-preview.mjs --url <previewUrl> --width 1320 --height 800 --out .specra/captures/top.png
+../../scripts/capture-preview.mjs --url <previewUrl> --width 1320 --height 800 --scroll-y 650 --out .specra/captures/mid.png
+```
+
+Evaluate each important viewport frame separately. Use the first visible viewport as the default alignment gate for dashboard and app screens, then use scrolled frames for specific below-the-fold regions.
+
+Closeout must report the capture viewport, scroll offset, and that `fullPage` was false.
+
 Do not run global filesystem searches such as `find $HOME -path '*capture-preview.mjs'` to rediscover the capture script. Use the known Specra script path directly.
 
 ## Deterministic UI mapping
@@ -210,7 +243,9 @@ When Specra is in the loop:
 - compose from existing shadcn/ui components whenever possible
 - if a needed shadcn primitive is missing, add it through the repo's CLI workflow before writing bespoke substitutes
 - do not tolerate ad hoc app-local replacements for common primitives; if the shadcn path is unavailable, fix it before continuing
+- if a prompt says plain CSS is allowed but also triggers Specra, follow Specra and scaffold TailwindCSS plus shadcn/ui
 - do not treat primitives like `Card` as generic layout boxes; avoid casually adding root-level `p-*`, `h-*`, or similar sizing overrides when a wrapper or subcomponent would solve the problem better
+- preserve the default shadcn primitive sizing unless there is a specific product reason to change the primitive contract; do not create large custom buttons or inputs with `h-16`, `px-8`, `text-lg`, or `rounded-full` as a styling shortcut
 - keep route files thin and use them mainly for page composition, not for hundreds of lines of screen markup
 - extract repeated or region-level UI into reusable local components before the page file becomes monolithic
 - prefer feature-local reusable components for screen structure and shared `@specra/ui` primitives for design-system building blocks
@@ -233,3 +268,16 @@ If Specra data is missing or weak:
 - confirm the project has a successful extraction
 - if the latest revision is outdated, tell the user to rerun analysis
 - if preview work is needed, confirm `previewUrl` or a reachable local app exists
+
+## Closeout contract
+
+When finishing Specra UI work, report the concrete workflow evidence:
+
+- the `projectId` loaded from `.specra.json` or the user
+- whether `specra_load_project_context` was called
+- which of the four artifacts were loaded or verified
+- whether shadcn primitives were reused or added through the CLI path
+- whether `specra_validate_generated_ui` passed or which violations remain
+- whether a current local screenshot evaluation artifact permits an alignment claim
+
+Do not claim Specra alignment without both code validation and a current local screenshot evaluation artifact.

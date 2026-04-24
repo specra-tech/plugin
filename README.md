@@ -2,6 +2,8 @@
 
 Specra helps agents build and refine UI from reference screenshots with grounded MCP workflows.
 
+This repository is automatically generated.
+
 It is designed for product and frontend work where visual quality matters: matching an existing design system, tightening an implemented screen, or generating a new surface that stays aligned with real references instead of drifting into generic output.
 
 ## What Specra does
@@ -53,6 +55,8 @@ Some workflows rely on local screenshot capture for visual verification. If need
 ```bash
 bunx playwright install chromium
 ```
+
+Specra captures app screens as viewport frames, not full-page screenshots. The default capture viewport is `1320x800`; oversized desktop heights such as `900px` and `1200px` are rejected unless explicitly allowed because they create the same misleading scaled-preview effect as full-page screenshots. For below-the-fold content, capture additional frames at explicit scroll offsets instead of compressing the full page into one image.
 
 ## Plugin surfaces
 
