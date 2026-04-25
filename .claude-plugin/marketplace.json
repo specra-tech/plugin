@@ -8,7 +8,7 @@
     {
       "name": "specra",
       "description": "Ground UI generation in reference screenshots with Specra MCP workflows.",
-      "source": "./plugins/specra",
+      "source": "./specra",
       "category": "development"
     }
   ]
