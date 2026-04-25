@@ -1,6 +1,6 @@
 ---
 name: connect-project
-description: Connect a repo to Specra, verify MCP access, confirm `.specra.json`, and check that the target project has a current four-artifact extraction before UI work begins.
+description: Connect a repo to Specra, verify MCP access, confirm `.specra.json`, and check that the target project has a current DESIGN.md plus theme.css extraction before UI work begins.
 ---
 
 # Connect Project
@@ -19,11 +19,9 @@ That means:
 - if present, `previewUrl` and `devCommand` are sensible
 - Specra MCP is reachable
 - the project has at least one successful extraction
-- the latest revision contains the current four-artifact set:
+- the latest revision contains both current public artifacts:
+  - `DESIGN.md`
   - `theme.css`
-  - `design-foundations.md`
-  - `patterns.md`
-  - `features.md`
 - the repo is ready for TailwindCSS + shadcn/ui implementation
 
 ## Workflow
@@ -44,7 +42,7 @@ That means:
 5. Inspect the repo for TailwindCSS and shadcn/ui readiness.
 6. If the repo is established and either dependency is missing, tell the user Specra requires them and ask for approval to install them before any UI implementation work begins.
 7. If the repo is greenfield or nearly empty, plan to scaffold with TailwindCSS and shadcn/ui by default.
-8. If the latest revision is missing any of the four required artifacts, tell the user to rerun analysis before UI generation work begins.
+8. If the latest revision is missing either required artifact, tell the user to rerun analysis before UI generation work begins.
 9. Add or update durable Specra agent instructions so future sessions do not require the user to ask for context loading again.
 10. If deterministic UI mapping is planned, add or verify stable `data-specra-id` markers on important UI regions.
 
@@ -62,7 +60,7 @@ For UI generation, UI refinement, visual evaluation, screenshot comparison, comp
 - Read `.specra.json`.
 - Use `projectId` as the Specra project ID unless the user explicitly provides another one.
 - Call `specra_load_project_context` before writing UI code.
-- Treat `theme.css`, `design-foundations.md`, `patterns.md`, and `features.md` as the current design handoff.
+- Treat `DESIGN.md` and `theme.css` as the current design handoff.
 - Reuse existing shadcn/ui primitives first.
 - Add missing common primitives through the repo's shadcn CLI path instead of hand-writing replacements.
 - Preserve default shadcn primitive sizing unless the user explicitly asks for a different component size.

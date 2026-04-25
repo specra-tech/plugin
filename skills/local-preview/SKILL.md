@@ -55,6 +55,16 @@ Look for likely preview commands in this order:
 
 Prefer the narrowest command that starts the relevant web app.
 
+## Plugin script paths
+
+Specra local scripts are part of this plugin. Resolve script paths relative to this `SKILL.md`, not relative to the target app or repo cwd:
+
+- `../scripts/capture-preview.mjs`
+- `../scripts/local-evaluate-loop.ts`
+- `../scripts/inspect-preview.mjs`
+
+Use these plugin scripts for capture, evaluation, and inspection. Do not replace them with package-runner fallbacks or ad hoc Playwright commands. It is fine to run the resolved plugin script while your shell cwd is the target repo so outputs like `.specra/captures/top.png` land in the repo.
+
 ## Verification
 
 Success means:
@@ -65,13 +75,13 @@ Success means:
 
 Before the first local screenshot capture on a machine, proactively tell the user:
 
-- `Install Playwright Chromium once on this machine with the package runner that matches the user's setup, such as npx, pnpm dlx, bunx, or yarn dlx.`
+- `Install Playwright locally in the target repo and install Chromium through the local Playwright binary. Do not use package-runner fallbacks as the Specra capture path.`
 
 When screenshot-based evaluation is needed for a local preview, prefer a local capture step first:
 
-- run `../../scripts/capture-preview.mjs` with the chosen `previewUrl`
-- then run `../../scripts/local-evaluate-loop.ts prepare-broad` with the resulting absolute screenshot path
-- then run `../../scripts/local-evaluate-loop.ts guide-broad --repo <repoPath>` after the client LLM returns the required JSON so the repo-local evaluation artifact is written
+- run `../scripts/local-evaluate-loop.ts run --repo <repoPath> --url <previewUrl>` with the chosen `previewUrl`
+- then ask the client LLM for JSON matching the returned `expected_output_contract`
+- then rerun `../scripts/local-evaluate-loop.ts run --repo <repoPath> --url <previewUrl> --mode broad --evaluation <path-or->` so the repo-local evaluation artifact is written and any micro-polish request is produced
 - do not run global filesystem searches such as `find $HOME -path '*capture-preview.mjs'`; use the known Specra script path directly
 - capture viewport frames only; do not use full-page screenshots or oversized desktop viewports for app or dashboard UI
 - default captures to `1320x800` unless matching the user's reported visible browser viewport; do not use `900px`-plus or `1200px`-tall captures for normal dashboard review
@@ -79,9 +89,8 @@ When screenshot-based evaluation is needed for a local preview, prefer a local c
 
 Keep the screenshot loop local:
 
-- capture locally with `../../scripts/capture-preview.mjs`
-- keep evaluation local with `../../scripts/local-evaluate-loop.ts`
-- require the local guide command to write the repo-local evaluation artifact before claiming Specra alignment
+- capture and evaluate locally with `../scripts/local-evaluate-loop.ts run`
+- require the local run command to write the repo-local evaluation artifact before claiming Specra alignment
 - do not use `curl`, raw HTML output, or `HTTP 200 OK` as visual verification; use those only to confirm the route responds before capturing a screenshot
 
 If it is not running:

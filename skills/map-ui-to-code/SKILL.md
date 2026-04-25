@@ -18,6 +18,14 @@ Do not use this skill for broad UI generation. Use the main `build-ui-from-refer
 
 Find the most likely source file or component for a visible UI region, using deterministic instrumentation whenever available.
 
+## Plugin Script Paths
+
+Specra local scripts are part of this plugin. Resolve script paths relative to this `SKILL.md`, not relative to the target app or repo cwd:
+
+- `../scripts/inspect-preview.mjs`
+
+Use the plugin inspection script. Do not replace it with package-runner fallbacks or ad hoc Playwright commands.
+
 ## Preferred method
 
 Prefer `data-specra-id` markers on meaningful UI roots.
@@ -32,7 +40,7 @@ Examples:
 
 When these markers exist:
 
-1. inspect the preview locally with `../../scripts/inspect-preview.mjs`
+1. inspect the preview locally with `../scripts/inspect-preview.mjs`
 2. identify the relevant `data-specra-id` or selected region
 3. call `specra_map_ui_to_code`
 4. use the returned snippets and file paths to map the region to the component, route, or shared layout that owns it
@@ -43,8 +51,8 @@ This is the primary path because it is deterministic.
 
 When a visible UI region has already been selected or called out:
 
-1. run `../../scripts/inspect-preview.mjs --url <previewUrl> --point <x,y>`
-2. or run `../../scripts/inspect-preview.mjs --url <previewUrl> --bbox <x,y,width,height>`
+1. run `../scripts/inspect-preview.mjs --url <previewUrl> --point <x,y>`
+2. or run `../scripts/inspect-preview.mjs --url <previewUrl> --bbox <x,y,width,height>`
 3. call `specra_map_ui_to_code` with:
    - `dom_inspection_path`
    - `repo_path`
@@ -59,8 +67,8 @@ The tool will:
 
 If the user is working from a live local preview, use the local inspection harness first:
 
-- `../../scripts/inspect-preview.mjs --url <previewUrl> --point x,y`
-- `../../scripts/inspect-preview.mjs --html-file <htmlFilePath> --bbox x,y,w,h`
+- `../scripts/inspect-preview.mjs --url <previewUrl> --point x,y`
+- `../scripts/inspect-preview.mjs --html-file <htmlFilePath> --bbox x,y,w,h`
 
 Then use the returned nearest `dataSpecraId` as the exact source anchor before falling back to repo search.
 

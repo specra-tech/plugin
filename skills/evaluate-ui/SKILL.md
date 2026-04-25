@@ -1,6 +1,6 @@
 ---
 name: evaluate-ui
-description: Evaluate implemented UI with screenshots and the current four-artifact Specra handoff, then return concrete mismatch findings and a bounded refinement path.
+description: Evaluate implemented UI with screenshots and the current DESIGN.md plus theme.css Specra handoff, then return concrete mismatch findings and a bounded refinement path.
 ---
 
 # Evaluate UI
@@ -18,22 +18,30 @@ Prefer to work from:
 
 Use screenshots plus the current handoff:
 
+- `DESIGN.md`
 - `theme.css`
-- `design-foundations.md`
-- `patterns.md`
-- `features.md`
+
+## Plugin script paths
+
+Specra local scripts are part of this plugin. Resolve script paths relative to this `SKILL.md`, not relative to the target app or repo cwd:
+
+- `../scripts/capture-preview.mjs`
+- `../scripts/local-evaluate-loop.ts`
+- `../scripts/inspect-preview.mjs`
+
+Use these plugin scripts for capture, evaluation, and inspection. Do not replace them with package-runner fallbacks or ad hoc Playwright commands. It is fine to run the resolved plugin script while your shell cwd is the target repo so outputs like `.specra/captures/top.png` land in the repo.
 
 ## Workflow
 
 1. Confirm the repo is connected to Specra through `.specra.json`.
-2. Confirm the latest revision has the full four-artifact set. If not, tell the user to rerun analysis.
+2. Confirm the latest revision has both public artifacts. If not, tell the user to rerun analysis.
 3. Confirm a preview URL exists, using `local-preview` if needed.
-4. If local screenshot capture is needed for the first time on a machine, tell the user to install Playwright Chromium once with the package runner that matches their setup, such as `npx playwright install chromium`, `pnpm dlx playwright install chromium`, `bunx playwright install chromium`, or `yarn dlx playwright install chromium`.
-5. For localhost previews, capture locally with `../../scripts/capture-preview.mjs --url <previewUrl>`.
-6. For generated previews, write the HTML to a local file and capture it with `../../scripts/capture-preview.mjs --html-file <htmlFilePath>`.
-7. Run `../../scripts/local-evaluate-loop.ts prepare-broad` to build the local evaluation bundle.
-8. Ask the client LLM to open the screenshot and local reference images from that bundle and return only JSON matching `expected_output_contract`.
-9. Save that JSON locally, then run `../../scripts/local-evaluate-loop.ts guide-broad --repo <repoPath>` to compute deterministic loop guidance and write the repo-local completion artifact.
+4. If local screenshot capture is needed for the first time on a machine, tell the user to install Playwright locally in the target repo and install Chromium through the local Playwright binary. Do not use package-runner fallbacks as the Specra capture path.
+5. For localhost previews, run `../scripts/local-evaluate-loop.ts run --repo <repoPath> --url <previewUrl>` from the target repo cwd.
+6. For generated previews, write the HTML to a local file and run `../scripts/local-evaluate-loop.ts run --repo <repoPath> --html-file <htmlFilePath>`.
+7. Ask the client LLM to open the screenshot and local reference images from the returned `evaluation_request` and return only JSON matching `expected_output_contract`.
+8. Save that JSON locally or pass it through stdin, then rerun the same command with `--mode broad --evaluation <path-or->` to compute deterministic loop guidance and write the repo-local status artifact.
+9. If the command returns a micro-polish `evaluation_request`, ask for micro JSON and rerun with `--mode micro --evaluation <path-or->`.
 10. If `dom_inspection_path` and `repo_path` are available on the local machine, use them separately for code-targeting work, but keep the evaluation itself local and client-driven.
 11. Pass `iteration_context` on every round after the first:
 
@@ -84,10 +92,10 @@ Use this loop:
 2. apply at most the top `2` fixes
 3. recapture
 4. repeat until `iteration_plan.nextStep` says `stop`, `verify-preview-and-recapture`, or `revert-to-best`
-5. if the broad result stopped and `shouldRunMicroPolish` is true, run `../../scripts/local-evaluate-loop.ts prepare-micro` on a fresh screenshot
+5. if the broad result stopped and `shouldRunMicroPolish` is true, let `../scripts/local-evaluate-loop.ts run` produce the fresh micro-polish screenshot and request
 6. apply only the top `1` tiny fix
 7. recapture
-8. ask the client LLM for the micro-polish JSON result, then run `../../scripts/local-evaluate-loop.ts guide-micro --repo <repoPath>`
+8. ask the client LLM for the micro-polish JSON result, then rerun with `--mode micro --evaluation <path-or->`
 9. run one second micro-polish pass only if the first one still finds real spacing, padding, or alignment issues
 10. stop when the micro-polish result says `stop` or `revert-to-best`
 
@@ -105,5 +113,5 @@ Use this loop:
 - Do not apply more fixes than `iteration_plan.maxFixTargets`.
 - Do not paste or restate the full evaluation JSON in the conversation when you continue the loop.
 - Do not conclude that the UI is done while `iteration_plan.nextStep` still says `fix-and-recapture`, `map-to-code-and-fix`, or `verify-preview-and-recapture`, or while a recommended micro-polish pass has not been run.
-- Do not claim that the UI is aligned to the Specra handoff unless the latest guide command wrote a current repo-local evaluation artifact that permits the claim.
+- Do not claim that the UI is aligned to the Specra handoff unless the latest run command wrote a current repo-local evaluation artifact that permits the claim.
 - Manual screenshot review does not replace the repo-local evaluation artifact.

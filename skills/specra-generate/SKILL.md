@@ -1,6 +1,6 @@
 ---
 name: specra-generate
-description: Primary end-to-end Specra workflow for generating UI from the current four-artifact handoff, including the required local screenshot finish gate.
+description: Primary end-to-end Specra workflow for generating UI from the current DESIGN.md plus theme.css handoff, including the required local screenshot finish gate.
 ---
 
 # Specra Generate
@@ -111,12 +111,10 @@ Then apply these rules:
 
 ## Current artifact model
 
-The latest supported Specra revision must contain all four public artifacts:
+The latest supported Specra revision must contain both public artifacts:
 
+- `DESIGN.md`
 - `theme.css`
-- `design-foundations.md`
-- `patterns.md`
-- `features.md`
 
 Treat those as the design handoff.
 
@@ -125,6 +123,16 @@ If the latest revision is missing any of them, treat it as outdated and tell the
 If the user asks to inspect a specific handoff artifact directly, call `specra_get_artifact` instead of searching the local filesystem.
 
 `system.md` is static runtime guidance handled by Specra itself. It is not a generated revision artifact.
+
+## Plugin script paths
+
+Specra local scripts are part of this plugin. Resolve script paths relative to this `SKILL.md`, not relative to the target app or repo cwd:
+
+- `../scripts/capture-preview.mjs`
+- `../scripts/local-evaluate-loop.ts`
+- `../scripts/inspect-preview.mjs`
+
+Use these plugin scripts for capture, evaluation, and inspection. Do not replace them with package-runner fallbacks or ad hoc Playwright commands. It is fine to run the resolved plugin script while your shell cwd is the target repo so outputs like `.specra/captures/top.png` land in the repo.
 
 ## Default generation loop
 
@@ -137,9 +145,9 @@ For normal UI implementation work, use this order:
 4. inspect the repo and pass the TailwindCSS + shadcn/ui implementation gate
 5. generate or edit the UI in code using the loaded handoff as the source of truth
 6. run `specra_validate_generated_ui`
-7. capture a fresh screenshot and run `../../scripts/local-evaluate-loop.ts prepare-broad`
-8. have the client LLM return JSON matching `expected_output_contract`, then run `../../scripts/local-evaluate-loop.ts guide-broad --repo <repoPath>`
-9. when the broad result stops and `shouldRunMicroPolish` is true, run `../../scripts/local-evaluate-loop.ts prepare-micro` on a fresh screenshot by default, then `guide-micro --repo <repoPath>`
+7. run `../scripts/local-evaluate-loop.ts run --repo <repoPath> --url <previewUrl>` to capture the viewport and produce the broad evaluation request
+8. have the client LLM return JSON matching `expected_output_contract`, then rerun the same command with `--mode broad --evaluation <path-or->`
+9. when the run command returns a micro-polish evaluation request, have the client LLM return that JSON and rerun with `--mode micro --evaluation <path-or->`
 10. apply the smallest useful fix, recapture, and re-evaluate if needed
 11. if drift remains, run `specra_suggest_ui_fix`
 
@@ -167,29 +175,30 @@ Rules:
 - follow `iteration_plan.nextStep` for the broad loop instead of improvising from prose feedback
 - if `iteration_plan.nextStep` is `verify-preview-and-recapture`, stop editing UI and verify the preview target first
 - after the broad loop stops and the screen is not off-target, run one micro-polish screenshot pass by default when `shouldRunMicroPolish` is true
+- prefer the `run` command for screenshot iteration; it wraps capture, broad guidance, optional micro handoff, and repo-local status output behind one command family
 - run a second micro-polish pass only if the first one still finds real spacing, padding, or alignment issues
 - do not fix more targets than `iteration_plan.maxFixTargets`
 - after each eval pass, carry forward only the distilled state: `verdict`, `qualityScore`, `iteration_plan.nextStep`, `agentInstruction`, and the top 1-2 findings
 - do not keep refeeding the full evaluation payload back into the thread
 - do not finalize while the evaluator still says to continue the broad loop or while a recommended micro-polish pass has not been run
-- do not claim that a screen is aligned to the Specra handoff unless the latest local guide command wrote a current repo-local evaluation artifact that permits the claim
+- do not claim that a screen is aligned to the Specra handoff unless the latest local run command wrote a current repo-local evaluation artifact that permits the claim
 - if a later broad pass suddenly collapses into `off-target` after a previously usable candidate, treat that as a preview-sanity problem first, not as a reason to keep broad-editing the UI
 
 Use the local micro-polish scaffold only after the screen is broadly correct or broad feedback has clearly converged.
 
 Do not finalize a materially new UI implementation after code validation alone. A fresh screenshot pass is required before concluding the loop.
 Do not use `curl`, raw HTML output, or `HTTP 200 OK` as proof that the UI visually matches the handoff. Those checks only confirm that the route responds.
-Manual screenshot review does not satisfy the Specra finish gate by itself. The repo-local evaluation artifact written by the guide command is the gate for alignment claims.
+Manual screenshot review does not satisfy the Specra finish gate by itself. The repo-local evaluation artifact written by the run command is the gate for alignment claims.
 
 ## Screenshot-first evaluation
 
 For localhost previews, prefer local capture on the user machine:
 
-1. install Playwright Chromium once on that machine if needed, using the package runner that matches the user's setup such as `npx playwright install chromium`, `pnpm dlx playwright install chromium`, `bunx playwright install chromium`, or `yarn dlx playwright install chromium`
-2. capture locally with `../../scripts/capture-preview.mjs`
-3. run `../../scripts/local-evaluate-loop.ts prepare-broad`
-4. have the client LLM return JSON matching `expected_output_contract`
-5. run `../../scripts/local-evaluate-loop.ts guide-broad --repo <repoPath>`
+1. ensure Playwright is installed locally in the target repo and Chromium has been installed through the local Playwright binary; do not use package-runner fallbacks as the Specra capture path
+2. run `../scripts/local-evaluate-loop.ts run --repo <repoPath> --url <previewUrl>` from the target repo cwd
+3. have the client LLM return JSON matching `expected_output_contract`
+4. rerun `../scripts/local-evaluate-loop.ts run --repo <repoPath> --url <previewUrl> --mode broad --evaluation <path-or->`
+5. if the result returns a micro-polish request, return micro JSON and rerun with `--mode micro --evaluation <path-or->`
 
 The screenshot loop should stay local. Do not route normal screenshot evaluation back through the Specra MCP server.
 
@@ -198,8 +207,8 @@ Capture viewport frames only. Do not use full-page screenshots or oversized desk
 When below-the-fold content matters, handle scrolling by capturing additional viewport frames with explicit scroll offsets:
 
 ```bash
-../../scripts/capture-preview.mjs --url <previewUrl> --width 1320 --height 800 --out .specra/captures/top.png
-../../scripts/capture-preview.mjs --url <previewUrl> --width 1320 --height 800 --scroll-y 650 --out .specra/captures/mid.png
+../scripts/local-evaluate-loop.ts run --repo <repoPath> --url <previewUrl> --width 1320 --height 800
+../scripts/local-evaluate-loop.ts run --repo <repoPath> --url <previewUrl> --width 1320 --height 800 --scroll-y 650
 ```
 
 Evaluate each important viewport frame separately. Use the first visible viewport as the default alignment gate for dashboard and app screens, then use scrolled frames for specific below-the-fold regions.
@@ -214,7 +223,7 @@ When a visible issue must be tied back to code, prefer deterministic mapping wit
 
 Typical flow:
 
-1. inspect the preview with `../../scripts/inspect-preview.mjs`
+1. inspect the preview with `../scripts/inspect-preview.mjs`
 2. pass `dom_inspection_path` into the local evaluation scaffold so the client LLM gets the style summary, and use `repo_path` separately for deterministic code mapping when needed
 3. if you still need a narrower callback target, call `specra_map_ui_to_code`
 
@@ -232,7 +241,7 @@ Use stable semantic `data-specra-id` values such as:
 
 When Specra is in the loop:
 
-- follow the four artifacts, not the old planning chain
+- follow `DESIGN.md` and `theme.css`, not the old planning chain
 - let the user task decide the requested screen type
 - use the references to transfer the design system first: theme, density, spacing, surfaces, and component language
 - transfer structure and system language, not reference-brand text; do not copy brand names, workspace labels, logos, avatar initials, product names, or screenshot-specific microcopy unless the user explicitly asked for exact brand recreation
@@ -275,7 +284,7 @@ When finishing Specra UI work, report the concrete workflow evidence:
 
 - the `projectId` loaded from `.specra.json` or the user
 - whether `specra_load_project_context` was called
-- which of the four artifacts were loaded or verified
+- whether `DESIGN.md` and `theme.css` were loaded or verified
 - whether shadcn primitives were reused or added through the CLI path
 - whether `specra_validate_generated_ui` passed or which violations remain
 - whether a current local screenshot evaluation artifact permits an alignment claim

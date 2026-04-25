@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { IterationContext } from "./local-evaluate-core";
 import {
-  type IterationContext,
   buildMicroPolishIterationGuidance,
   buildPreviewIterationGuidance,
   getLocalEvalStatusPath,
@@ -17,16 +18,11 @@ You are the runtime Specra implementation contract.
 Rules:
 - TailwindCSS and shadcn/ui are required implementation dependencies.
 - Prefer semantic Tailwind utilities and the project theme contract over hard-coded colors and arbitrary values.
-- Use the four current analysis artifacts as the source of truth: theme.css, design-foundations.md, patterns.md, and features.md.
+- Use the current DESIGN.md and theme.css artifacts as the source of truth.
 - Do not claim that a UI is aligned to the Specra handoff unless a current local Specra screenshot evaluation artifact permits that claim.
 `.trim();
 
-const artifactTypes = [
-  "design-foundations-md",
-  "features-md",
-  "patterns-md",
-  "theme-css",
-] as const;
+const artifactTypes = ["design-md", "theme-css"] as const;
 
 type ArtifactType = (typeof artifactTypes)[number];
 type SpecraConfig = {
@@ -52,13 +48,19 @@ const defaultIterationContext = {
   previousQualityScore: null,
 } satisfies IterationContext;
 
+const defaultViewport = {
+  height: 800,
+  waitMs: 1200,
+  width: 1320,
+} as const;
+
 const broadEvaluationPrompt = `
 You evaluate a live UI screenshot against a Specra project's current analysis artifacts.
 
 Rules:
 - Return only the requested structured JSON.
 - Use the screenshot as the execution surface.
-- Use the four analysis artifacts as the design source of truth.
+- Use DESIGN.md and theme.css as the design source of truth.
 - Use the task description as the primary source of truth for what kind of screen the user asked for.
 - Treat the references primarily as design-system input: theme, density, spacing, surfaces, component language, and interaction tone.
 - If layout or theme semantics are unavailable in local artifact-only mode, rely more heavily on the artifact prose and the screenshot itself.
@@ -135,19 +137,29 @@ function printUsage() {
   console.error(
     `
 Usage:
+  bun plugins/specra/scripts/local-evaluate-loop.ts run --repo /path/to/repo --url http://localhost:3000
+  bun plugins/specra/scripts/local-evaluate-loop.ts run --repo /path/to/repo --url http://localhost:3000 --mode broad --evaluation /abs/broad-result.json
+  bun plugins/specra/scripts/local-evaluate-loop.ts run --repo /path/to/repo --mode micro --evaluation /abs/micro-result.json
   bun plugins/specra/scripts/local-evaluate-loop.ts prepare-broad --repo /path/to/repo --screenshot /abs/path.png
   bun plugins/specra/scripts/local-evaluate-loop.ts prepare-micro --repo /path/to/repo --screenshot /abs/path.png --focus-areas tabs,toolbar
   bun plugins/specra/scripts/local-evaluate-loop.ts guide-broad --repo /path/to/repo --evaluation /abs/result.json
   bun plugins/specra/scripts/local-evaluate-loop.ts guide-micro --repo /path/to/repo --evaluation /abs/result.json
 
 Options:
+  --mode <broad|micro>        Evaluation mode for run when --evaluation is provided. Defaults to broad.
+  --url <url>                 Preview URL to capture for run.
+  --html-file <path>          Local HTML file to capture for run.
   --repo <path>               Repo root with .specra.json and local artifact outputs.
   --screenshot <path>         Absolute path to a locally captured screenshot.
   --dom-inspection <path>     Optional absolute path to local DOM inspection JSON.
   --task <text>               Optional task description.
   --focus-areas <csv>         Optional comma-separated micro-polish focus areas.
   --iteration-context <path>  Optional JSON file with prior iteration context.
-  --evaluation <path>         JSON file containing the client LLM's evaluation result.
+  --evaluation <path|->       JSON file containing the client LLM's evaluation result, or - for stdin.
+  --width <number>            Capture viewport width for run. Defaults to ${defaultViewport.width}.
+  --height <number>           Capture viewport height for run. Defaults to ${defaultViewport.height}.
+  --scroll-y <number>         Capture scroll offset for run. Defaults to 0.
+  --wait-ms <number>          Extra wait after navigation for run. Defaults to ${defaultViewport.waitMs}.
   --out <path>                Optional output file. Defaults to stdout.
   --help                      Show this message.
 `.trim(),
@@ -205,6 +217,164 @@ async function writeOutput(outputPath: string | undefined, value: unknown) {
   await writeFile(path.resolve(process.cwd(), outputPath), serialized, "utf8");
 }
 
+async function readStdin() {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function readEvaluationJson(evaluationPath: string) {
+  const raw =
+    evaluationPath === "-"
+      ? await readStdin()
+      : await readFile(path.resolve(process.cwd(), evaluationPath), "utf8");
+
+  return JSON.parse(raw);
+}
+
+function parsePositiveInteger(value: string | undefined, label: string) {
+  if (value == null) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${label} must be a positive integer.`);
+  }
+
+  return parsed;
+}
+
+function parseNonNegativeInteger(value: string | undefined, label: string) {
+  if (value == null) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${label} must be zero or a positive integer.`);
+  }
+
+  return parsed;
+}
+
+async function runProcess(command: string, args: string[], cwd: string) {
+  return await new Promise<{
+    exitCode: number;
+    stderr: string;
+    stdout: string;
+  }>((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on("error", reject);
+    child.on("close", (exitCode) => {
+      resolve({
+        exitCode: exitCode ?? 1,
+        stderr,
+        stdout,
+      });
+    });
+  });
+}
+
+function getScriptPath(fileName: string) {
+  return path.join(path.dirname(fileURLToPath(import.meta.url)), fileName);
+}
+
+function defaultCapturePath(params: {
+  mode: "broad" | "micro";
+  repoPath: string;
+  scrollY: number;
+}) {
+  const fileName =
+    params.mode === "micro"
+      ? "top-micro.png"
+      : params.scrollY === 0
+        ? "top.png"
+        : `scroll-${params.scrollY}.png`;
+
+  return path.join(params.repoPath, ".specra", "captures", fileName);
+}
+
+async function captureForRun(params: {
+  height: number;
+  htmlFile?: string;
+  mode: "broad" | "micro";
+  repoPath: string;
+  screenshotPath?: string;
+  scrollY: number;
+  url?: string;
+  waitMs: number;
+  width: number;
+}) {
+  if (params.screenshotPath) {
+    return {
+      capture: null,
+      screenshotPath: path.resolve(process.cwd(), params.screenshotPath),
+    };
+  }
+
+  if (!params.url && !params.htmlFile) {
+    throw new Error(
+      "run needs --url, --html-file, or --screenshot so it can evaluate a concrete viewport.",
+    );
+  }
+
+  const outputPath = defaultCapturePath({
+    mode: params.mode,
+    repoPath: params.repoPath,
+    scrollY: params.scrollY,
+  });
+
+  await mkdir(path.dirname(outputPath), { recursive: true });
+
+  const args = [
+    getScriptPath("capture-preview.mjs"),
+    ...(params.url ? ["--url", params.url] : []),
+    ...(params.htmlFile ? ["--html-file", params.htmlFile] : []),
+    "--out",
+    outputPath,
+    "--width",
+    String(params.width),
+    "--height",
+    String(params.height),
+    "--scroll-y",
+    String(params.scrollY),
+    "--wait-ms",
+    String(params.waitMs),
+  ];
+  const result = await runProcess(process.execPath, args, params.repoPath);
+
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `Screenshot capture failed.\n${result.stderr.trim() || result.stdout.trim()}`,
+    );
+  }
+
+  return {
+    capture: JSON.parse(result.stdout) as unknown,
+    screenshotPath: outputPath,
+  };
+}
+
 async function findSpecraConfig(repoPath: string) {
   for (const fileName of [".specra.json", ".secra.json"]) {
     const absolutePath = path.join(repoPath, fileName);
@@ -231,12 +401,8 @@ async function findSpecraConfig(repoPath: string) {
 
 function defaultOutputFileName(type: ArtifactType) {
   switch (type) {
-    case "design-foundations-md":
-      return "design-foundations.md";
-    case "features-md":
-      return "features.md";
-    case "patterns-md":
-      return "patterns.md";
+    case "design-md":
+      return "DESIGN.md";
     case "theme-css":
       return "theme.css";
   }
@@ -541,10 +707,7 @@ function parsePreviewEvaluation(value: unknown) {
       "module_system_assessment",
     ),
     nextAction: value.nextAction as "accept" | "tweak" | "regenerate",
-    primary_mismatch: assertString(
-      value.primary_mismatch,
-      "primary_mismatch",
-    ),
+    primary_mismatch: assertString(value.primary_mismatch, "primary_mismatch"),
     product_mode_assessment: parseDiagnosisAssessment(
       value.product_mode_assessment,
       "product_mode_assessment",
@@ -612,9 +775,7 @@ function normalizeIterationContext(context?: Partial<IterationContext>) {
 
 function buildEvaluationInputText(params: {
   analysisArtifacts: {
-    designFoundationsMd: string;
-    featuresMd: string;
-    patternsMd: string;
+    designMd: string;
     themeCss: string;
   };
   focusAreas?: string[];
@@ -630,17 +791,11 @@ function buildEvaluationInputText(params: {
       ? `Iteration context: broadRound=${params.iterationContext.broadRound}, microRound=${params.iterationContext.microRound}, bestQualityScore=${params.iterationContext.bestQualityScore ?? "unknown"}, previousQualityScore=${params.iterationContext.previousQualityScore ?? "unknown"}, nonImprovingBroadStreak=${params.iterationContext.nonImprovingBroadStreak ?? 0}`
       : "Iteration context: first screenshot review.",
     "",
+    "[DESIGN.md]",
+    params.analysisArtifacts.designMd,
+    "",
     "[theme.css]",
     params.analysisArtifacts.themeCss,
-    "",
-    "[design-foundations.md]",
-    params.analysisArtifacts.designFoundationsMd,
-    "",
-    "[patterns.md]",
-    params.analysisArtifacts.patternsMd,
-    "",
-    "[features.md]",
-    params.analysisArtifacts.featuresMd,
     "",
     params.previewDomSummary
       ? ["[preview-dom-style-summary]", params.previewDomSummary, ""].join("\n")
@@ -649,7 +804,7 @@ function buildEvaluationInputText(params: {
       ? `Focus areas: ${params.focusAreas.join(", ")}`
       : "Focus areas: whole-screen alignment and hierarchy.",
     "",
-    "Use the screenshot as the implementation surface and the four analysis artifacts as the design source of truth.",
+    "Use the screenshot as the implementation surface and DESIGN.md plus theme.css as the design source of truth.",
     "Keep issue and recommendation terse, precise, and directly actionable for the next edit.",
     "Judge visual language precisely: surface model, chrome character, density, accent discipline, and typography posture matter as much as overall layout.",
     "Compare module archetypes directly: icon or thumbnail tile rows, embedded lists, hero panels, tables, queues, and support stacks are not interchangeable.",
@@ -755,6 +910,7 @@ async function prepareEvaluationBundle(params: {
   command: "prepare-broad" | "prepare-micro";
   domInspectionPath?: string;
   focusAreas?: string[];
+  iterationContext?: Partial<IterationContext>;
   iterationContextPath?: string;
   repoPath: string;
   screenshotPath: string;
@@ -762,31 +918,22 @@ async function prepareEvaluationBundle(params: {
 }) {
   const repoPath = path.resolve(process.cwd(), params.repoPath);
   const config = await findSpecraConfig(repoPath);
-  const iterationContext = params.iterationContextPath
-    ? normalizeIterationContext(
-        JSON.parse(
-          await readFile(
-            path.resolve(process.cwd(), params.iterationContextPath),
-            "utf8",
-          ),
-        ) as Partial<IterationContext>,
-      )
-    : normalizeIterationContext();
+  const iterationContext = params.iterationContext
+    ? normalizeIterationContext(params.iterationContext)
+    : params.iterationContextPath
+      ? normalizeIterationContext(
+          JSON.parse(
+            await readFile(
+              path.resolve(process.cwd(), params.iterationContextPath),
+              "utf8",
+            ),
+          ) as Partial<IterationContext>,
+        )
+      : normalizeIterationContext();
 
-  const [
-    themeCss,
-    designFoundationsMd,
-    patternsMd,
-    featuresMd,
-    runtimeSystemMd,
-  ] = await Promise.all([
+  const [designMd, themeCss, runtimeSystemMd] = await Promise.all([
+    readFile(resolveArtifactPath(repoPath, config, "design-md"), "utf8"),
     readFile(resolveArtifactPath(repoPath, config, "theme-css"), "utf8"),
-    readFile(
-      resolveArtifactPath(repoPath, config, "design-foundations-md"),
-      "utf8",
-    ),
-    readFile(resolveArtifactPath(repoPath, config, "patterns-md"), "utf8"),
-    readFile(resolveArtifactPath(repoPath, config, "features-md"), "utf8"),
     loadRuntimeSystemMd(),
   ]);
 
@@ -808,7 +955,7 @@ async function prepareEvaluationBundle(params: {
 
   return {
     completion_gate: {
-      note: "A Specra alignment claim is only permitted after a guide command writes a current local eval artifact for this repo.",
+      note: "A Specra alignment claim is only permitted after a local run or guide command writes a current local eval artifact for this repo.",
       status_artifact_path: getLocalEvalStatusPath(repoPath),
     },
     expected_output_contract: getEvaluationOutputContract(mode),
@@ -820,9 +967,7 @@ async function prepareEvaluationBundle(params: {
     system_prompt: systemPrompt,
     user_prompt: buildEvaluationInputText({
       analysisArtifacts: {
-        designFoundationsMd,
-        featuresMd,
-        patternsMd,
+        designMd,
         themeCss,
       },
       focusAreas: params.focusAreas,
@@ -835,15 +980,13 @@ async function prepareEvaluationBundle(params: {
 
 async function guideEvaluation(params: {
   command: "guide-broad" | "guide-micro";
+  evaluation?: unknown;
   evaluationPath: string;
   iterationContextPath?: string;
   repoPath: string;
 }) {
-  const evaluationRaw = await readFile(
-    path.resolve(process.cwd(), params.evaluationPath),
-    "utf8",
-  );
-  const parsedEvaluation = JSON.parse(evaluationRaw);
+  const parsedEvaluation =
+    params.evaluation ?? (await readEvaluationJson(params.evaluationPath));
   const iterationContext = params.iterationContextPath
     ? normalizeIterationContext(
         JSON.parse(
@@ -863,43 +1006,47 @@ async function guideEvaluation(params: {
     );
     const repoPath = path.resolve(process.cwd(), params.repoPath);
     const localEvalArtifact = {
-      alignmentClaim: guidance.iterationPlan.nextStep === "verify-preview-and-recapture"
-        ? {
-            allowed: false,
-            reason:
-              "The preview must be verified and recaptured before a visual alignment claim is trustworthy.",
-            status: "blocked-verify-preview" as const,
-          }
-        : guidance.iterationPlan.nextStep === "revert-to-best"
+      alignmentClaim:
+        guidance.iterationPlan.nextStep === "verify-preview-and-recapture"
           ? {
               allowed: false,
               reason:
-                "The latest screenshot regressed from a stronger prior candidate, so alignment cannot be claimed from this pass.",
-              status: "blocked-revert-to-best" as const,
+                "The preview must be verified and recaptured before a visual alignment claim is trustworthy.",
+              status: "blocked-verify-preview" as const,
             }
-          : evaluation.verdict === "off-target"
+          : guidance.iterationPlan.nextStep === "revert-to-best"
             ? {
                 allowed: false,
                 reason:
-                  "The latest screenshot is still off-target relative to the current Specra handoff.",
-                status: "blocked-off-target" as const,
+                  "The latest screenshot regressed from a stronger prior candidate, so alignment cannot be claimed from this pass.",
+                status: "blocked-revert-to-best" as const,
               }
-            : guidance.iterationPlan.nextStep !== "stop" ||
-                guidance.shouldContinue
+            : evaluation.verdict === "off-target"
               ? {
                   allowed: false,
                   reason:
-                    "The broad screenshot loop is still active, so a Specra alignment claim would be premature.",
-                  status: "blocked-continue-loop" as const,
+                    "The latest screenshot is still off-target relative to the current Specra handoff.",
+                  status: "blocked-off-target" as const,
                 }
-              : {
-                  allowed: false,
-                  reason:
-                    "A broad screenshot evaluation alone does not permit a Specra alignment claim. Run at least one micro-polish screenshot pass and write a current micro evaluation artifact first.",
-                  status: "blocked-needs-micro-polish" as const,
-                },
+              : guidance.iterationPlan.nextStep !== "stop" ||
+                  guidance.shouldContinue
+                ? {
+                    allowed: false,
+                    reason:
+                      "The broad screenshot loop is still active, so a Specra alignment claim would be premature.",
+                    status: "blocked-continue-loop" as const,
+                  }
+                : {
+                    allowed: false,
+                    reason:
+                      "A broad screenshot evaluation alone does not permit a Specra alignment claim. Run at least one micro-polish screenshot pass and write a current micro evaluation artifact first.",
+                    status: "blocked-needs-micro-polish" as const,
+                  },
       completedAt: new Date().toISOString(),
-      evaluationPath: path.resolve(process.cwd(), params.evaluationPath),
+      evaluationPath:
+        params.evaluationPath === "-"
+          ? "stdin"
+          : path.resolve(process.cwd(), params.evaluationPath),
       iterationNextStep: guidance.iterationPlan.nextStep,
       loopDecision: guidance.loopDecision,
       mode: "broad" as const,
@@ -933,36 +1080,41 @@ async function guideEvaluation(params: {
   );
   const repoPath = path.resolve(process.cwd(), params.repoPath);
   const localEvalArtifact = {
-    alignmentClaim: guidance.iterationPlan.nextStep === "revert-to-best"
-      ? {
-          allowed: false,
-          reason:
-            "The latest micro-polish pass regressed from a stronger prior candidate, so alignment cannot be claimed from this pass.",
-          status: "blocked-revert-to-best" as const,
-        }
-      : evaluation.verdict === "polished" &&
-          guidance.iterationPlan.nextStep === "stop"
+    alignmentClaim:
+      guidance.iterationPlan.nextStep === "revert-to-best"
         ? {
-            allowed: true,
+            allowed: false,
             reason:
-              "A current local Specra micro-polish evaluation permits a visual alignment claim.",
-            status: "verified-locally" as const,
+              "The latest micro-polish pass regressed from a stronger prior candidate, so alignment cannot be claimed from this pass.",
+            status: "blocked-revert-to-best" as const,
           }
-        : guidance.iterationPlan.nextStep !== "stop" || guidance.shouldContinue
+        : evaluation.verdict === "polished" &&
+            guidance.iterationPlan.nextStep === "stop"
           ? {
-              allowed: false,
+              allowed: true,
               reason:
-                "The micro-polish loop is still active, so a Specra alignment claim would be premature.",
-              status: "blocked-continue-loop" as const,
+                "A current local Specra micro-polish evaluation permits a visual alignment claim.",
+              status: "verified-locally" as const,
             }
-          : {
-              allowed: false,
-              reason:
-                "The latest micro-polish evaluation still reports visible cleanup work.",
-              status: "blocked-needs-refinement" as const,
-            },
+          : guidance.iterationPlan.nextStep !== "stop" ||
+              guidance.shouldContinue
+            ? {
+                allowed: false,
+                reason:
+                  "The micro-polish loop is still active, so a Specra alignment claim would be premature.",
+                status: "blocked-continue-loop" as const,
+              }
+            : {
+                allowed: false,
+                reason:
+                  "The latest micro-polish evaluation still reports visible cleanup work.",
+                status: "blocked-needs-refinement" as const,
+              },
     completedAt: new Date().toISOString(),
-    evaluationPath: path.resolve(process.cwd(), params.evaluationPath),
+    evaluationPath:
+      params.evaluationPath === "-"
+        ? "stdin"
+        : path.resolve(process.cwd(), params.evaluationPath),
     iterationNextStep: guidance.iterationPlan.nextStep,
     loopDecision: guidance.loopDecision,
     mode: "micro" as const,
@@ -989,9 +1141,255 @@ async function guideEvaluation(params: {
   };
 }
 
+function extractRunFindings(value: unknown) {
+  if (!isRecord(value) || !Array.isArray(value.findings)) {
+    return [];
+  }
+
+  return value.findings
+    .filter(isRecord)
+    .slice(0, 3)
+    .map((finding) => ({
+      area: typeof finding.area === "string" ? finding.area : "unknown",
+      issue: typeof finding.issue === "string" ? finding.issue : "",
+      recommendation:
+        typeof finding.recommendation === "string"
+          ? finding.recommendation
+          : "",
+      severity:
+        typeof finding.severity === "string" ? finding.severity : "unknown",
+    }));
+}
+
+function buildRunStatus(params: {
+  captures: string[];
+  guideResult: Record<string, unknown>;
+  mode: "broad" | "micro";
+}) {
+  const iterationPlan = isRecord(params.guideResult.iteration_plan)
+    ? params.guideResult.iteration_plan
+    : null;
+  const nextStep =
+    typeof iterationPlan?.nextStep === "string"
+      ? iterationPlan.nextStep
+      : typeof params.guideResult.loopDecision === "string"
+        ? params.guideResult.loopDecision
+        : "unknown";
+
+  return {
+    captures: params.captures,
+    local_eval_status_artifact_path:
+      params.guideResult.local_eval_status_artifact_path ?? null,
+    mode: params.mode,
+    nextStep,
+    qualityScore:
+      typeof params.guideResult.qualityScore === "number"
+        ? params.guideResult.qualityScore
+        : null,
+    shouldContinue:
+      typeof params.guideResult.shouldContinue === "boolean"
+        ? params.guideResult.shouldContinue
+        : true,
+    topFindings: extractRunFindings(params.guideResult),
+    verdict:
+      typeof params.guideResult.verdict === "string"
+        ? params.guideResult.verdict
+        : "unknown",
+  };
+}
+
+async function runEvaluationCommand(params: {
+  domInspectionPath?: string;
+  evaluationPath?: string;
+  focusAreas?: string[];
+  height: number;
+  htmlFile?: string;
+  iterationContextPath?: string;
+  mode: "broad" | "micro";
+  repoPath: string;
+  screenshotPath?: string;
+  scrollY: number;
+  taskDescription?: string;
+  url?: string;
+  waitMs: number;
+  width: number;
+}) {
+  const repoPath = path.resolve(process.cwd(), params.repoPath);
+  const captures: string[] = [];
+
+  if (!params.evaluationPath) {
+    const capture = await captureForRun({
+      height: params.height,
+      htmlFile: params.htmlFile,
+      mode: params.mode,
+      repoPath,
+      screenshotPath: params.screenshotPath,
+      scrollY: params.scrollY,
+      url: params.url,
+      waitMs: params.waitMs,
+      width: params.width,
+    });
+    captures.push(capture.screenshotPath);
+
+    const bundle = await prepareEvaluationBundle({
+      command: params.mode === "broad" ? "prepare-broad" : "prepare-micro",
+      domInspectionPath: params.domInspectionPath,
+      focusAreas: params.focusAreas,
+      iterationContextPath: params.iterationContextPath,
+      repoPath,
+      screenshotPath: capture.screenshotPath,
+      taskDescription: params.taskDescription,
+    });
+
+    return {
+      capture: capture.capture,
+      captures,
+      evaluation_request: bundle,
+      mode: params.mode,
+      nextCommand:
+        params.mode === "broad"
+          ? "Return broad JSON matching expected_output_contract, then rerun this same command with --mode broad --evaluation <path-or->."
+          : "Return micro-polish JSON matching expected_output_contract, then rerun this same command with --mode micro --evaluation <path-or->.",
+      nextStep: params.mode === "broad" ? "evaluate-broad" : "evaluate-micro",
+      status: "needs-client-evaluation",
+    };
+  }
+
+  const guideResult = (await guideEvaluation({
+    command: params.mode === "broad" ? "guide-broad" : "guide-micro",
+    evaluationPath: params.evaluationPath,
+    iterationContextPath: params.iterationContextPath,
+    repoPath,
+  })) as Record<string, unknown>;
+
+  const runStatus = buildRunStatus({
+    captures,
+    guideResult,
+    mode: params.mode,
+  });
+
+  if (
+    params.mode === "broad" &&
+    isRecord(guideResult.iteration_guidance) &&
+    guideResult.iteration_guidance.shouldRunMicroPolish === true
+  ) {
+    const capture = await captureForRun({
+      height: params.height,
+      htmlFile: params.htmlFile,
+      mode: "micro",
+      repoPath,
+      screenshotPath:
+        params.url || params.htmlFile ? undefined : params.screenshotPath,
+      scrollY: params.scrollY,
+      url: params.url,
+      waitMs: params.waitMs,
+      width: params.width,
+    });
+    captures.push(capture.screenshotPath);
+
+    const nextContext = isRecord(guideResult.next_iteration_context)
+      ? (guideResult.next_iteration_context as Partial<IterationContext>)
+      : undefined;
+    const guidance = isRecord(guideResult.iteration_guidance)
+      ? guideResult.iteration_guidance
+      : null;
+    const suggestedFocusAreas = Array.isArray(guidance?.suggestedFocusAreas)
+      ? guidance.suggestedFocusAreas.filter(
+          (value): value is string => typeof value === "string",
+        )
+      : undefined;
+    const bundle = await prepareEvaluationBundle({
+      command: "prepare-micro",
+      domInspectionPath: params.domInspectionPath,
+      focusAreas: params.focusAreas ?? suggestedFocusAreas,
+      iterationContext: nextContext,
+      repoPath,
+      screenshotPath: capture.screenshotPath,
+      taskDescription: params.taskDescription,
+    });
+
+    return {
+      ...runStatus,
+      capture: capture.capture,
+      captures,
+      evaluation_request: bundle,
+      mode: "micro",
+      nextCommand:
+        "Return micro-polish JSON matching expected_output_contract, then rerun this same command with --mode micro --evaluation <path-or->.",
+      nextStep: "evaluate-micro",
+      status: "needs-client-evaluation",
+    };
+  }
+
+  return {
+    ...runStatus,
+    blockingFindings:
+      runStatus.shouldContinue || runStatus.mode !== "micro"
+        ? runStatus.topFindings
+        : [],
+    status:
+      !runStatus.shouldContinue &&
+      runStatus.mode === "micro" &&
+      runStatus.verdict === "polished"
+        ? "verified"
+        : runStatus.shouldContinue
+          ? "continue"
+          : "blocked",
+    warnings:
+      runStatus.mode === "broad" && !runStatus.shouldContinue
+        ? [
+            "Broad evaluation alone does not permit an alignment claim. Run the micro-polish pass when requested by the broad result.",
+          ]
+        : [],
+  };
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const command = args.command;
+
+  if (command === "run") {
+    if (!args.repo) {
+      throw new Error("--repo is required.");
+    }
+
+    const mode =
+      args.mode === "micro" || args.mode === "broad"
+        ? args.mode
+        : args.mode
+          ? (() => {
+              throw new Error("--mode must be broad or micro.");
+            })()
+          : "broad";
+    const result = await runEvaluationCommand({
+      domInspectionPath: args["dom-inspection"],
+      evaluationPath: args.evaluation,
+      focusAreas: args["focus-areas"]
+        ? args["focus-areas"]
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean)
+        : undefined,
+      height:
+        parsePositiveInteger(args.height, "--height") ?? defaultViewport.height,
+      htmlFile: args["html-file"],
+      iterationContextPath: args["iteration-context"],
+      mode,
+      repoPath: args.repo,
+      screenshotPath: args.screenshot,
+      scrollY: parseNonNegativeInteger(args["scroll-y"], "--scroll-y") ?? 0,
+      taskDescription: args.task,
+      url: args.url,
+      waitMs:
+        parsePositiveInteger(args["wait-ms"], "--wait-ms") ??
+        defaultViewport.waitMs,
+      width:
+        parsePositiveInteger(args.width, "--width") ?? defaultViewport.width,
+    });
+
+    await writeOutput(args.out, result);
+    return;
+  }
 
   if (command === "prepare-broad" || command === "prepare-micro") {
     if (!args.repo) {

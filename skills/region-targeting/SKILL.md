@@ -20,14 +20,22 @@ Do not use this skill for broad generation. Use the main `build-ui-from-referenc
 
 Use deterministic DOM inspection first, then map the resulting `data-specra-id` back to source so subsequent fixes target the correct component.
 
+## Plugin Script Paths
+
+Specra local scripts are part of this plugin. Resolve script paths relative to this `SKILL.md`, not relative to the target app or repo cwd:
+
+- `../scripts/inspect-preview.mjs`
+
+Use the plugin inspection script. Do not replace it with package-runner fallbacks or ad hoc Playwright commands.
+
 ## Workflow
 
 1. Confirm the repo is connected to Specra through `.specra.json`.
 2. Confirm a local preview exists with `local-preview` if needed.
 3. Capture or open the preview locally.
 4. Run the plugin-local inspection harness:
-   - `../../scripts/inspect-preview.mjs --url <previewUrl> --point x,y`
-   - or `../../scripts/inspect-preview.mjs --html-file <htmlFilePath> --bbox x,y,w,h`
+   - `../scripts/inspect-preview.mjs --url <previewUrl> --point x,y`
+   - or `../scripts/inspect-preview.mjs --html-file <htmlFilePath> --bbox x,y,w,h`
 5. Read the `nearest` result and treat `dataSpecraId` as the primary code anchor.
 6. Search the repo for the exact `data-specra-id` value.
 7. Map that ID to the owning route, component, or shared layout.
