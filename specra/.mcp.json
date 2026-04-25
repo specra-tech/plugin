@@ -3,7 +3,7 @@
     "specra": {
       "type": "http",
       "url": "https://specra.tech/mcp",
-      "note": "Local Specra MCP server for plugin development. Production packaging rewrites this endpoint for hosted installs. Supports project context loading, UI validation, and the specra-generate local screenshot workflow."
+      "note": "Supports project context loading, UI validation, and the specra-generate local screenshot workflow."
     }
   }
 }
