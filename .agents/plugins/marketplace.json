@@ -8,7 +8,7 @@
       "name": "specra",
       "source": {
         "source": "local",
-        "path": "./."
+        "path": "./specra"
       },
       "policy": {
         "installation": "AVAILABLE",
