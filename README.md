@@ -18,6 +18,12 @@ Specra gives agents a structured UI workflow:
 
 The primary end-to-end workflow is `specra-generate`.
 
+## Opinionated implementation path
+
+Specra's MCP and bundled skills are intentionally opinionated. For UI generation, refinement, and evaluation, they expect TailwindCSS and shadcn/ui as the implementation stack.
+
+That opinion applies to agent workflows, not to the public artifacts themselves. Users can still download `DESIGN.md` and `theme.css` and apply them manually in another stack. The plugin chooses TailwindCSS and shadcn/ui so agents have a predictable path for semantic tokens, shared primitives, screenshot evaluation, and code-level drift checks.
+
 ## Included workflows
 
 This plugin includes skills for:
