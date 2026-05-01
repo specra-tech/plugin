@@ -56,6 +56,7 @@ export type LocalEvalAlignmentClaimStatus =
   | "blocked-off-target"
   | "blocked-revert-to-best"
   | "blocked-verify-preview"
+  | "verified-targeted-fix"
   | "verified-locally";
 
 export interface LocalEvalStatusArtifact {
@@ -68,7 +69,7 @@ export interface LocalEvalStatusArtifact {
   evaluationPath: string;
   iterationNextStep: string;
   loopDecision: string;
-  mode: "broad" | "micro";
+  mode: "broad" | "micro" | "targeted";
   qualityScore: number;
   shouldContinue: boolean;
   verdict: string;
@@ -589,6 +590,10 @@ export async function writeLocalEvalStatusArtifact(
 ) {
   const artifactPath = getLocalEvalStatusPath(repoPath);
   await mkdir(path.dirname(artifactPath), { recursive: true });
-  await writeFile(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
+  await writeFile(
+    artifactPath,
+    `${JSON.stringify(artifact, null, 2)}\n`,
+    "utf8",
+  );
   return artifactPath;
 }

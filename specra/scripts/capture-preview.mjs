@@ -28,6 +28,12 @@ Options:
   --height <number>    Viewport height. Defaults to 800.
   --scroll-y <number>  Scroll offset in CSS pixels before capture. Defaults to 0.
   --wait-ms <number>   Extra wait time after navigation. Defaults to 1200.
+  --expect-selector <selector>
+                       Fail capture unless this selector exists in the loaded page.
+  --expect-specra-id <id>
+                       Fail capture unless [data-specra-id="<id>"] exists in the loaded page.
+  --expect-text <text>
+                       Fail capture unless this text appears in the loaded page body.
   --allow-tall-viewport
                        Allow viewport heights over ${MAX_STANDARD_VIEWPORT_HEIGHT}px when explicitly matching a user's browser.
   --full-page          Unsupported. Specra captures viewport frames only.
@@ -107,6 +113,24 @@ function parseArgs(argv) {
       continue;
     }
 
+    if (value === "--expect-selector") {
+      parsed.expectSelector = nextValue;
+      index += 1;
+      continue;
+    }
+
+    if (value === "--expect-specra-id") {
+      parsed.expectSpecraId = nextValue;
+      index += 1;
+      continue;
+    }
+
+    if (value === "--expect-text") {
+      parsed.expectText = nextValue;
+      index += 1;
+      continue;
+    }
+
     if (value === "--scroll-y") {
       parsed.scrollY = Number.parseInt(nextValue, 10);
       index += 1;
@@ -152,6 +176,12 @@ function validateViewportHeight(value, allowTallViewport) {
   throw new Error(
     `Viewport height ${value}px is too tall for standard Specra app evaluation. Use ${DEFAULT_VIEWPORT_WIDTH}x${DEFAULT_VIEWPORT_HEIGHT} or match the user's visible browser viewport; for lower content, keep the viewport height and use --scroll-y. If you are intentionally matching a taller user viewport, pass --allow-tall-viewport.`,
   );
+}
+
+function validateOptionalString(value, label) {
+  if (value != null && String(value).trim().length === 0) {
+    throw new Error(`${label} must be a non-empty string when provided.`);
+  }
 }
 
 async function resolveCaptureTarget(parsed) {
@@ -272,7 +302,7 @@ try {
 
   await page.waitForTimeout(args.waitMs);
 
-  const captureMetadata = await page.evaluate(() => ({
+  const captureMetadata = await page.evaluate((ownershipArgs) => ({
     devicePixelRatio: window.devicePixelRatio,
     innerHeight: window.innerHeight,
     innerWidth: window.innerWidth,
@@ -289,7 +319,52 @@ try {
           width: window.visualViewport.width,
         }
       : null,
-  }));
+    previewOwnership: {
+      bodyTextMatched: ownershipArgs.expectText
+        ? document.body.innerText.includes(ownershipArgs.expectText)
+        : null,
+      expectedSelector: ownershipArgs.expectSelector ?? null,
+      expectedSpecraId: ownershipArgs.expectSpecraId ?? null,
+      expectedText: ownershipArgs.expectText ?? null,
+      selectorMatched: ownershipArgs.expectSelector
+        ? document.querySelector(ownershipArgs.expectSelector) !== null
+        : null,
+      specraIdMatched: ownershipArgs.expectSpecraId
+        ? document.querySelector(
+            '[data-specra-id="' +
+              CSS.escape(ownershipArgs.expectSpecraId) +
+              '"]',
+          ) !== null
+        : null,
+      title: document.title,
+      url: window.location.href,
+    },
+  }), {
+    expectSelector: args.expectSelector ?? null,
+    expectSpecraId: args.expectSpecraId ?? null,
+    expectText: args.expectText ?? null,
+  });
+
+  const missingOwnershipChecks = [
+    captureMetadata.previewOwnership.selectorMatched === false
+      ? "selector " + args.expectSelector
+      : null,
+    captureMetadata.previewOwnership.specraIdMatched === false
+      ? "data-specra-id " + args.expectSpecraId
+      : null,
+    captureMetadata.previewOwnership.bodyTextMatched === false
+      ? "text " + args.expectText
+      : null,
+  ].filter(Boolean);
+
+  if (missingOwnershipChecks.length > 0) {
+    throw new Error(
+      "Preview ownership check failed for " +
+        args.input +
+        ": missing " +
+        missingOwnershipChecks.join(", "),
+    );
+  }
 
   await page.screenshot({
     fullPage: false,
@@ -362,24 +437,72 @@ async function captureViewportDirect(args, playwright) {
 
     await page.waitForTimeout(args.waitMs);
 
-    const captureMetadata = await page.evaluate(() => ({
-      devicePixelRatio: window.devicePixelRatio,
-      innerHeight: window.innerHeight,
-      innerWidth: window.innerWidth,
-      outerHeight: window.outerHeight,
-      outerWidth: window.outerWidth,
-      scrollHeight: document.documentElement.scrollHeight,
-      scrollWidth: document.documentElement.scrollWidth,
-      scrollX: window.scrollX,
-      scrollY: window.scrollY,
-      visualViewport: window.visualViewport
-        ? {
-            height: window.visualViewport.height,
-            scale: window.visualViewport.scale,
-            width: window.visualViewport.width,
-          }
+    const captureMetadata = await page.evaluate(
+      (ownershipArgs) => ({
+        devicePixelRatio: window.devicePixelRatio,
+        innerHeight: window.innerHeight,
+        innerWidth: window.innerWidth,
+        outerHeight: window.outerHeight,
+        outerWidth: window.outerWidth,
+        scrollHeight: document.documentElement.scrollHeight,
+        scrollWidth: document.documentElement.scrollWidth,
+        scrollX: window.scrollX,
+        scrollY: window.scrollY,
+        visualViewport: window.visualViewport
+          ? {
+              height: window.visualViewport.height,
+              scale: window.visualViewport.scale,
+              width: window.visualViewport.width,
+            }
+          : null,
+        previewOwnership: {
+          bodyTextMatched: ownershipArgs.expectText
+            ? document.body.innerText.includes(ownershipArgs.expectText)
+            : null,
+          expectedSelector: ownershipArgs.expectSelector ?? null,
+          expectedSpecraId: ownershipArgs.expectSpecraId ?? null,
+          expectedText: ownershipArgs.expectText ?? null,
+          selectorMatched: ownershipArgs.expectSelector
+            ? document.querySelector(ownershipArgs.expectSelector) !== null
+            : null,
+          specraIdMatched: ownershipArgs.expectSpecraId
+            ? document.querySelector(
+                '[data-specra-id="' +
+                  CSS.escape(ownershipArgs.expectSpecraId) +
+                  '"]',
+              ) !== null
+            : null,
+          title: document.title,
+          url: window.location.href,
+        },
+      }),
+      {
+        expectSelector: args.expectSelector ?? null,
+        expectSpecraId: args.expectSpecraId ?? null,
+        expectText: args.expectText ?? null,
+      },
+    );
+
+    const missingOwnershipChecks = [
+      captureMetadata.previewOwnership.selectorMatched === false
+        ? "selector " + args.expectSelector
         : null,
-    }));
+      captureMetadata.previewOwnership.specraIdMatched === false
+        ? "data-specra-id " + args.expectSpecraId
+        : null,
+      captureMetadata.previewOwnership.bodyTextMatched === false
+        ? "text " + args.expectText
+        : null,
+    ].filter(Boolean);
+
+    if (missingOwnershipChecks.length > 0) {
+      throw new Error(
+        "Preview ownership check failed for " +
+          args.input +
+          ": missing " +
+          missingOwnershipChecks.join(", "),
+      );
+    }
 
     await page.screenshot({
       fullPage: false,
@@ -421,6 +544,9 @@ async function main() {
   validateNumber(parsed.waitMs, "Wait time");
   validateNonNegativeNumber(parsed.scrollY, "Scroll Y");
   validateViewportHeight(parsed.height, parsed.allowTallViewport);
+  validateOptionalString(parsed.expectSelector, "--expect-selector");
+  validateOptionalString(parsed.expectSpecraId, "--expect-specra-id");
+  validateOptionalString(parsed.expectText, "--expect-text");
 
   const outputPath = resolveOutputPath(parsed.outPath);
 
@@ -429,6 +555,9 @@ async function main() {
   });
 
   const captureMetadata = await captureViewport({
+    expectSelector: parsed.expectSelector,
+    expectSpecraId: parsed.expectSpecraId,
+    expectText: parsed.expectText,
     input: target.input,
     outputPath,
     scrollY: parsed.scrollY,
@@ -463,6 +592,7 @@ async function main() {
           scrollHeight: captureMetadata.scrollHeight,
           scrollWidth: captureMetadata.scrollWidth,
         },
+        previewOwnership: captureMetadata.previewOwnership,
       },
       null,
       2,

@@ -92,6 +92,7 @@ Then apply these rules:
 - In this repo, prefer shared `@specra/ui` components first. If a shared primitive is missing, add it through the `bun ui-add` / `packages/ui` flow rather than generating a one-off `button.tsx`, `card.tsx`, or similar file in app code.
 - Treat hand-written replacements for common shadcn primitives as a failure, not as an acceptable fallback.
 - If the shared `@specra/ui` or shadcn CLI path is broken, stop and repair that setup before continuing. Do not work around it by generating local copies of `button.tsx`, `card.tsx`, `badge.tsx`, `input.tsx`, or similar files in app code.
+- shadcn init/add commands can rewrite global CSS, aliases, and theme imports. After every shadcn install/add step, verify that the Specra `theme.css` artifact still exists, is still imported from the app CSS entrypoint or package theme entrypoint, and that semantic utilities such as `bg-background`, `bg-card`, `text-foreground`, `border-border`, and `ring-ring` still resolve.
 - Treat shared primitives as opinionated components, not as generic wrappers.
 - Avoid root-level `p-*`, `px-*`, `py-*`, `h-*`, `min-h-*`, and `w-*` overrides on `Card`, `Button`, `Badge`, `Input`, and similar primitives unless the primitive itself truly needs a different size contract.
 - Do not enlarge shadcn primitive roots just to make a screen feel more custom. Avoid `h-14`, `h-16`, `px-8`, `py-4`, `text-lg`, `rounded-full`, and custom oversized size props on `Button`, `Input`, `Badge`, and `Card` unless the user explicitly requests that component size.
@@ -159,6 +160,19 @@ For normal UI implementation work, use this order:
 
 Use `specra_map_ui_to_code` when a visible issue needs to be mapped back to a specific file or component.
 
+## Targeted Fix Mode
+
+Use targeted fix mode when the user reports a narrow visual bug after a generally aligned implementation, such as clipped cards, overflow in one region, a bad responsive stack, a misaligned toolbar, or a small spacing/radius defect.
+
+Flow:
+
+1. map the affected visible region to source with `map-ui-to-code`
+2. patch only the responsible region
+3. capture the affected viewport with `../scripts/local-evaluate-loop.ts run --repo <repoPath> --url <previewUrl> --targeted --accept-current --focus-areas <region-or-issue>`
+4. escalate to the full broad plus micro loop only if the fix touches global layout, shared primitives, theme tokens, or first-glance hierarchy
+
+Targeted fix mode confirms the local fix and writes a repo-local artifact, but it does not permit a whole-screen Specra alignment claim.
+
 ## Validation and iteration
 
 Keep the loop bounded.
@@ -207,6 +221,8 @@ For localhost previews, prefer local capture on the user machine:
 5. if the result returns a micro-polish request, return micro JSON and rerun with `--mode micro --evaluation <path-or->`
 
 The screenshot loop should stay local. Do not route normal screenshot evaluation back through the Specra MCP server.
+
+Use `--expect-specra-id`, `--expect-selector`, or `--expect-text` on localhost captures when the preview port might be stale or shared with another service. A wrong service on the same port must fail capture instead of producing misleading screenshot feedback.
 
 Capture viewport frames only. Do not use full-page screenshots or oversized desktop viewports for app or dashboard UI evaluation because tall screenshots get scaled down in previews and hide real sizing problems. Default to `1320x800` unless matching the user's reported visible browser viewport. Do not use `900px`-plus or `1200px`-tall captures for normal dashboard review.
 

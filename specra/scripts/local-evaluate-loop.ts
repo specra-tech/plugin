@@ -138,6 +138,8 @@ function printUsage() {
     `
 Usage:
   bun plugins/specra/scripts/local-evaluate-loop.ts run --repo /path/to/repo --url http://localhost:3000
+  bun plugins/specra/scripts/local-evaluate-loop.ts run --repo /path/to/repo --url http://localhost:3000 --targeted --accept-current --focus-areas cards
+  bun plugins/specra/scripts/local-evaluate-loop.ts run --repo /path/to/repo --url http://localhost:3000 --mode micro --accept-current
   bun plugins/specra/scripts/local-evaluate-loop.ts run --repo /path/to/repo --url http://localhost:3000 --mode broad --evaluation /abs/broad-result.json
   bun plugins/specra/scripts/local-evaluate-loop.ts run --repo /path/to/repo --mode micro --evaluation /abs/micro-result.json
   bun plugins/specra/scripts/local-evaluate-loop.ts prepare-broad --repo /path/to/repo --screenshot /abs/path.png
@@ -154,6 +156,12 @@ Options:
   --dom-inspection <path>     Optional absolute path to local DOM inspection JSON.
   --task <text>               Optional task description.
   --focus-areas <csv>         Optional comma-separated micro-polish focus areas.
+  --targeted                  Confirm a narrow user-reported visual fix instead of running the full alignment loop.
+  --accept-current            Accept the current captured screenshot without client-evaluation JSON.
+  --expect-selector <selector>
+                              Capture fails unless this selector exists in the loaded preview.
+  --expect-specra-id <id>     Capture fails unless this data-specra-id exists in the loaded preview.
+  --expect-text <text>        Capture fails unless this text exists in the loaded preview.
   --iteration-context <path>  Optional JSON file with prior iteration context.
   --evaluation <path|->       JSON file containing the client LLM's evaluation result, or - for stdin.
   --width <number>            Capture viewport width for run. Defaults to ${defaultViewport.width}.
@@ -174,7 +182,7 @@ function parseArgs(argv: string[]) {
     process.exit(0);
   }
 
-  const parsed: Record<string, string> = {
+  const parsed: Record<string, boolean | string> = {
     command,
   };
 
@@ -190,6 +198,11 @@ function parseArgs(argv: string[]) {
       throw new Error(`Unknown argument: ${value}`);
     }
 
+    if (value === "--accept-current" || value === "--targeted") {
+      parsed[value.slice(2)] = true;
+      continue;
+    }
+
     const nextValue = rest[index + 1];
 
     if (!nextValue) {
@@ -201,6 +214,16 @@ function parseArgs(argv: string[]) {
   }
 
   return parsed;
+}
+
+function getStringArg(args: Record<string, boolean | string>, key: string) {
+  const value = args[key];
+
+  return typeof value === "string" ? value : undefined;
+}
+
+function hasFlag(args: Record<string, boolean | string>, key: string) {
+  return args[key] === true;
 }
 
 async function writeOutput(outputPath: string | undefined, value: unknown) {
@@ -315,6 +338,9 @@ function defaultCapturePath(params: {
 }
 
 async function captureForRun(params: {
+  expectSelector?: string;
+  expectSpecraId?: string;
+  expectText?: string;
   height: number;
   htmlFile?: string;
   mode: "broad" | "micro";
@@ -350,6 +376,13 @@ async function captureForRun(params: {
     getScriptPath("capture-preview.mjs"),
     ...(params.url ? ["--url", params.url] : []),
     ...(params.htmlFile ? ["--html-file", params.htmlFile] : []),
+    ...(params.expectSelector
+      ? ["--expect-selector", params.expectSelector]
+      : []),
+    ...(params.expectSpecraId
+      ? ["--expect-specra-id", params.expectSpecraId]
+      : []),
+    ...(params.expectText ? ["--expect-text", params.expectText] : []),
     "--out",
     outputPath,
     "--width",
@@ -1198,9 +1231,68 @@ function buildRunStatus(params: {
   };
 }
 
+async function writeAcceptCurrentArtifact(params: {
+  capturePath: string;
+  focusAreas?: string[];
+  mode: "broad" | "micro" | "targeted";
+  repoPath: string;
+}) {
+  const isTargeted = params.mode === "targeted";
+  const localEvalArtifact = {
+    alignmentClaim: isTargeted
+      ? {
+          allowed: false,
+          reason:
+            "Targeted fix mode confirmed the current screenshot for a narrow user-reported issue only. Run the full broad plus micro screenshot loop before claiming whole-screen Specra alignment.",
+          status: "verified-targeted-fix" as const,
+        }
+      : {
+          allowed: true,
+          reason:
+            "The current local screenshot was accepted through --accept-current. Use only when the rendered UI has already been inspected and is obviously aligned.",
+          status: "verified-locally" as const,
+        },
+    completedAt: new Date().toISOString(),
+    evaluationPath: `accept-current:${params.capturePath}`,
+    iterationNextStep: "stop",
+    loopDecision: "stop",
+    mode: params.mode,
+    qualityScore: isTargeted ? 88 : 96,
+    shouldContinue: false,
+    verdict: isTargeted ? "targeted-fix-confirmed" : "polished",
+    version: 1 as const,
+  };
+  const localEvalStatusArtifactPath = await writeLocalEvalStatusArtifact(
+    params.repoPath,
+    localEvalArtifact,
+  );
+
+  return {
+    captures: [params.capturePath],
+    focusAreas: params.focusAreas ?? [],
+    local_eval_status_artifact_path: localEvalStatusArtifactPath,
+    mode: params.mode,
+    nextStep: "stop",
+    qualityScore: localEvalArtifact.qualityScore,
+    shouldContinue: false,
+    status: isTargeted ? "targeted-confirmed" : "verified",
+    verdict: localEvalArtifact.verdict,
+    warnings: isTargeted
+      ? [
+          "Targeted fix mode does not permit a whole-screen Specra alignment claim.",
+        ]
+      : [
+          "--accept-current bypasses client-evaluation JSON. Use it only after a direct visual inspection of the captured screenshot.",
+        ],
+  };
+}
+
 async function runEvaluationCommand(params: {
   domInspectionPath?: string;
   evaluationPath?: string;
+  expectSelector?: string;
+  expectSpecraId?: string;
+  expectText?: string;
   focusAreas?: string[];
   height: number;
   htmlFile?: string;
@@ -1210,6 +1302,8 @@ async function runEvaluationCommand(params: {
   screenshotPath?: string;
   scrollY: number;
   taskDescription?: string;
+  acceptCurrent?: boolean;
+  targeted?: boolean;
   url?: string;
   waitMs: number;
   width: number;
@@ -1217,8 +1311,45 @@ async function runEvaluationCommand(params: {
   const repoPath = path.resolve(process.cwd(), params.repoPath);
   const captures: string[] = [];
 
+  if (params.acceptCurrent) {
+    const acceptMode = params.targeted ? "targeted" : params.mode;
+    const capture = await captureForRun({
+      expectSelector: params.expectSelector,
+      expectSpecraId: params.expectSpecraId,
+      expectText: params.expectText,
+      height: params.height,
+      htmlFile: params.htmlFile,
+      mode: acceptMode === "targeted" ? "micro" : acceptMode,
+      repoPath,
+      screenshotPath: params.screenshotPath,
+      scrollY: params.scrollY,
+      url: params.url,
+      waitMs: params.waitMs,
+      width: params.width,
+    });
+
+    return {
+      capture: capture.capture,
+      ...(await writeAcceptCurrentArtifact({
+        capturePath: capture.screenshotPath,
+        focusAreas: params.focusAreas,
+        mode: acceptMode,
+        repoPath,
+      })),
+    };
+  }
+
+  if (params.targeted) {
+    throw new Error(
+      "Targeted fix mode requires --accept-current. Use it after mapping and patching a narrow visible issue, then capture the affected viewport once.",
+    );
+  }
+
   if (!params.evaluationPath) {
     const capture = await captureForRun({
+      expectSelector: params.expectSelector,
+      expectSpecraId: params.expectSpecraId,
+      expectText: params.expectText,
       height: params.height,
       htmlFile: params.htmlFile,
       mode: params.mode,
@@ -1274,6 +1405,9 @@ async function runEvaluationCommand(params: {
     guideResult.iteration_guidance.shouldRunMicroPolish === true
   ) {
     const capture = await captureForRun({
+      expectSelector: params.expectSelector,
+      expectSpecraId: params.expectSpecraId,
+      expectText: params.expectText,
       height: params.height,
       htmlFile: params.htmlFile,
       mode: "micro",
@@ -1346,96 +1480,114 @@ async function runEvaluationCommand(params: {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const command = args.command;
+  const command = getStringArg(args, "command");
 
   if (command === "run") {
-    if (!args.repo) {
+    const repo = getStringArg(args, "repo");
+
+    if (!repo) {
       throw new Error("--repo is required.");
     }
 
+    const requestedMode = getStringArg(args, "mode");
     const mode =
-      args.mode === "micro" || args.mode === "broad"
-        ? args.mode
-        : args.mode
+      requestedMode === "micro" || requestedMode === "broad"
+        ? requestedMode
+        : requestedMode
           ? (() => {
               throw new Error("--mode must be broad or micro.");
             })()
           : "broad";
     const result = await runEvaluationCommand({
-      domInspectionPath: args["dom-inspection"],
-      evaluationPath: args.evaluation,
-      focusAreas: args["focus-areas"]
-        ? args["focus-areas"]
+      acceptCurrent: hasFlag(args, "accept-current"),
+      domInspectionPath: getStringArg(args, "dom-inspection"),
+      evaluationPath: getStringArg(args, "evaluation"),
+      expectSelector: getStringArg(args, "expect-selector"),
+      expectSpecraId: getStringArg(args, "expect-specra-id"),
+      expectText: getStringArg(args, "expect-text"),
+      focusAreas: getStringArg(args, "focus-areas")
+        ? getStringArg(args, "focus-areas")!
             .split(",")
             .map((value) => value.trim())
             .filter(Boolean)
         : undefined,
       height:
-        parsePositiveInteger(args.height, "--height") ?? defaultViewport.height,
-      htmlFile: args["html-file"],
-      iterationContextPath: args["iteration-context"],
+        parsePositiveInteger(getStringArg(args, "height"), "--height") ??
+        defaultViewport.height,
+      htmlFile: getStringArg(args, "html-file"),
+      iterationContextPath: getStringArg(args, "iteration-context"),
       mode,
-      repoPath: args.repo,
-      screenshotPath: args.screenshot,
-      scrollY: parseNonNegativeInteger(args["scroll-y"], "--scroll-y") ?? 0,
-      taskDescription: args.task,
-      url: args.url,
+      repoPath: repo,
+      screenshotPath: getStringArg(args, "screenshot"),
+      scrollY:
+        parseNonNegativeInteger(getStringArg(args, "scroll-y"), "--scroll-y") ??
+        0,
+      targeted: hasFlag(args, "targeted"),
+      taskDescription: getStringArg(args, "task"),
+      url: getStringArg(args, "url"),
       waitMs:
-        parsePositiveInteger(args["wait-ms"], "--wait-ms") ??
+        parsePositiveInteger(getStringArg(args, "wait-ms"), "--wait-ms") ??
         defaultViewport.waitMs,
       width:
-        parsePositiveInteger(args.width, "--width") ?? defaultViewport.width,
+        parsePositiveInteger(getStringArg(args, "width"), "--width") ??
+        defaultViewport.width,
     });
 
-    await writeOutput(args.out, result);
+    await writeOutput(getStringArg(args, "out"), result);
     return;
   }
 
   if (command === "prepare-broad" || command === "prepare-micro") {
-    if (!args.repo) {
+    const repo = getStringArg(args, "repo");
+    const screenshot = getStringArg(args, "screenshot");
+
+    if (!repo) {
       throw new Error("--repo is required.");
     }
 
-    if (!args.screenshot) {
+    if (!screenshot) {
       throw new Error("--screenshot is required.");
     }
 
     const result = await prepareEvaluationBundle({
       command,
-      domInspectionPath: args["dom-inspection"],
-      focusAreas: args["focus-areas"]
-        ? args["focus-areas"]
+      domInspectionPath: getStringArg(args, "dom-inspection"),
+      focusAreas: getStringArg(args, "focus-areas")
+        ? getStringArg(args, "focus-areas")!
             .split(",")
             .map((value) => value.trim())
             .filter(Boolean)
         : undefined,
-      iterationContextPath: args["iteration-context"],
-      repoPath: args.repo,
-      screenshotPath: args.screenshot,
-      taskDescription: args.task,
+      iterationContextPath: getStringArg(args, "iteration-context"),
+      repoPath: repo,
+      screenshotPath: screenshot,
+      taskDescription: getStringArg(args, "task"),
     });
 
-    await writeOutput(args.out, result);
+    await writeOutput(getStringArg(args, "out"), result);
     return;
   }
 
   if (command === "guide-broad" || command === "guide-micro") {
-    if (!args.repo) {
+    const repo = getStringArg(args, "repo");
+    const evaluation = getStringArg(args, "evaluation");
+
+    if (!repo) {
       throw new Error("--repo is required.");
     }
 
-    if (!args.evaluation) {
+    if (!evaluation) {
       throw new Error("--evaluation is required.");
     }
 
     const result = await guideEvaluation({
       command,
-      evaluationPath: args.evaluation,
-      iterationContextPath: args["iteration-context"],
-      repoPath: args.repo,
+      evaluationPath: evaluation,
+      iterationContextPath: getStringArg(args, "iteration-context"),
+      repoPath: repo,
     });
 
-    await writeOutput(args.out, result);
+    await writeOutput(getStringArg(args, "out"), result);
     return;
   }
 

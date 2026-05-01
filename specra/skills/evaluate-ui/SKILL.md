@@ -21,6 +21,20 @@ Use screenshots plus the current handoff:
 - `DESIGN.md`
 - `theme.css`
 
+## Targeted Fix Mode
+
+Use targeted fix mode for narrow user-reported visual bugs such as clipped cards, one broken responsive stack, a misaligned toolbar, overflow, or a small spacing/radius defect in a named region.
+
+Targeted fix flow:
+
+1. Confirm the affected preview route and region.
+2. Map the region to source with `map-ui-to-code` when `data-specra-id`, a point, or a bounding box is available.
+3. Apply one small patch to the responsible source.
+4. Capture the affected viewport once with `../scripts/local-evaluate-loop.ts run --repo <repoPath> --url <previewUrl> --targeted --accept-current --focus-areas <region-or-issue>`.
+5. Stop unless the fix changes shell structure, global theme tokens, shared primitives, or system-level layout.
+
+Targeted fix mode confirms the narrow fix only. It does not permit a whole-screen Specra alignment claim. Escalate to the full broad plus micro loop when the issue touches global layout, theme, reusable primitives, or the screen's first-glance hierarchy.
+
 ## Plugin script paths
 
 Specra local scripts are part of this plugin. Resolve script paths relative to this `SKILL.md`, not relative to the target app or repo cwd:
@@ -124,3 +138,4 @@ Use this loop:
 - Do not conclude that the UI is done while `iteration_plan.nextStep` still says `fix-and-recapture`, `map-to-code-and-fix`, or `verify-preview-and-recapture`, or while a recommended micro-polish pass has not been run.
 - Do not claim that the UI is aligned to the Specra handoff unless the latest run command wrote a current repo-local evaluation artifact that permits the claim.
 - Manual screenshot review does not replace the repo-local evaluation artifact.
+- Use `--expect-specra-id`, `--expect-selector`, or `--expect-text` when capturing a localhost preview that might have port conflicts. The capture should fail when it reaches the wrong service.
