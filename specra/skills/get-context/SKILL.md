@@ -1,20 +1,19 @@
 ---
-name: connect-project
-description: Connect a repo to Specra, verify MCP access, confirm `.specra.json`, and check that the target project has a current DESIGN.md plus theme.css extraction before UI work begins.
+name: get-context
+description: Load and verify Specra project context, confirm `.specra.json`, and check that the target project has a current DESIGN.md plus theme.css extraction before UI work begins.
 ---
 
-# Connect Project
+# Get Context
 
-Use this skill when the user needs to set up or verify a repo's connection to Specra.
+Use this skill when the user needs project context for Specra work.
 
 ## Goal
 
-Leave the repo in a state where Specra-powered UI work can run reliably.
+Leave the agent with enough repo-local and Specra context to start UI work reliably.
 
 That means:
 
 - the repo has a valid root `.specra.json`
-- future agent sessions have durable instructions to load Specra context automatically
 - the project ID is correct
 - if present, `previewUrl` and `devCommand` are sensible
 - Specra MCP is reachable
@@ -43,12 +42,11 @@ That means:
 6. If the repo is established and either dependency is missing, tell the user Specra requires them and ask for approval to install them before any UI implementation work begins.
 7. If the repo is greenfield or nearly empty, plan to scaffold with TailwindCSS and shadcn/ui by default.
 8. If the latest revision is missing either required artifact, tell the user to rerun analysis before UI generation work begins.
-9. Add or update durable Specra agent instructions so future sessions do not require the user to ask for context loading again.
-10. If deterministic UI mapping is planned, add or verify stable `data-specra-id` markers on important UI regions.
+9. If deterministic UI mapping is planned, add or verify stable `data-specra-id` markers on important UI regions.
 
 ## Durable agent instructions
 
-When connecting a repo, create or update `.specra/agent-instructions.md` with repo-local guidance:
+If the user asks for durable setup, create or update `.specra/agent-instructions.md` with repo-local guidance:
 
 ```md
 # Specra Agent Instructions
@@ -77,8 +75,7 @@ For Specra-connected UI work, read `.specra/agent-instructions.md` and load the 
 
 - Treat `.specra.json` as the default source of truth for `project_id`.
 - Prefer `.specra.json` for preview setup when `previewUrl` or `devCommand` is present.
-- Treat `.specra/agent-instructions.md` as the durable cross-session hint for agents that start in this repo.
+- Treat `.specra/agent-instructions.md` as optional durable guidance, not as a requirement for every context load.
 - If MCP auth fails, report that clearly before blaming the project data.
 - If the revision is outdated, be explicit that the project must be reanalyzed.
 - Do not let the workflow continue into CSS-first implementation when TailwindCSS + shadcn/ui are the required stack.
-- Do not let a connected repo depend on chat memory alone. Persist enough instruction locally that a new session knows to load Specra context automatically.

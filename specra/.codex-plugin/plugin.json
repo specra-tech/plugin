@@ -23,13 +23,13 @@
   "interface": {
     "displayName": "Specra",
     "shortDescription": "Build and refine UI from reference screenshots with grounded MCP workflows",
-    "longDescription": "Use Specra to extract structure, implementation rules, and reusable component patterns from reference screenshots, then ground generation and validation through Specra MCP tools. For normal UI builds, use the primary specra-generate skill so the full loop runs: handoff load, implementation, code validation, local screenshot evaluation, and the finish gate.",
+    "longDescription": "Use Specra to extract structure, implementation rules, and reusable component patterns from reference screenshots, then ground generation and validation through Specra MCP tools. For normal UI builds, use the primary implement-ui skill so the full loop runs: handoff load, implementation, code validation, local screenshot evaluation, and the finish gate.",
     "developerName": "Specra",
     "category": "Coding",
     "capabilities": ["Interactive", "Write"],
     "websiteURL": "https://specra.tech",
     "defaultPrompt": [
-      "Use specra-generate to build a dashboard that matches this project's references",
+      "Use implement-ui to build a dashboard that matches this project's references",
       "Evaluate this implemented screen against the extracted Specra system",
       "Tighten this UI to match the project's Specra handoff"
     ],

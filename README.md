@@ -16,7 +16,7 @@ Specra gives agents a structured UI workflow:
 - validate the result against the handoff
 - use local screenshot-based evaluation before closing out
 
-The primary end-to-end workflow is `specra-generate`.
+The primary end-to-end workflow is `implement-ui`.
 
 ## Opinionated implementation path
 
@@ -28,13 +28,10 @@ That opinion applies to agent workflows, not to the public artifacts themselves.
 
 This plugin includes skills for:
 
-- `specra-generate`: default end-to-end UI generation and refinement flow
+- `implement-ui`: default end-to-end UI generation and refinement flow
 - `evaluate-ui`: screenshot-based evaluation of an implemented screen
-- `fix-ui-drift`: targeted repair when the UI is close but off-hand-off
-- `connect-project`: verify repo connection and project readiness
-- `local-preview`: discover or verify the local preview used for evaluation
-- `map-ui-to-code`: map visible UI regions back to source files
-- `region-targeting`: resolve a selected preview region into a concrete code target
+- `get-context`: verify repo connection, project readiness, and current handoff context
+- `map-ui-to-code`: map visible UI regions, selected regions, points, or bounding boxes back to source files
 
 ## Best fit
 
@@ -49,20 +46,22 @@ It is not primarily a general-purpose design inspiration tool. It is for impleme
 
 ## Example prompts
 
-- Use `specra-generate` to build a dashboard that matches this project’s references
+- Use `implement-ui` to build a dashboard that matches this project’s references
 - Evaluate this implemented screen against the current Specra handoff
 - Tighten this UI to match the project’s extracted design system
 - Map this visible panel back to the source component
 
 ## Local screenshot evaluation
 
-Some workflows rely on local screenshot capture for visual verification. If needed, install Playwright Chromium once on the machine using your preferred package runner, for example:
+When Codex Browser Use / the in-app browser is available and ready, prefer it for live preview inspection: open localhost, confirm the intended route and theme, interact with visible states, and orient localized fixes. Use Computer Use only when the in-app browser is unavailable, blocked, or the task requires desktop-app interaction. Use Playwright-backed plugin capture only as a last resort for inspection, or when producing the required repo-local evaluation artifact and no Browser Use or Computer Use screenshot is available. Browser Use or Computer Use inspection is not the final alignment gate by itself; Specra still requires a current repo-local evaluation artifact before an agent claims visual alignment.
+
+Some workflows still rely on local screenshot capture for visual verification. If needed, install Playwright Chromium once on the machine using your preferred package runner, for example:
 
 ```bash
 bunx playwright install chromium
 ```
 
-Specra captures app screens as viewport frames, not full-page screenshots. The default capture viewport is `1320x800`; oversized desktop heights such as `900px` and `1200px` are rejected unless explicitly allowed because they create the same misleading scaled-preview effect as full-page screenshots. For below-the-fold content, capture additional frames at explicit scroll offsets instead of compressing the full page into one image.
+Specra captures app screens as viewport frames, not full-page screenshots. The default capture viewport is `1320x800`; oversized desktop heights such as `900px` and `1200px` are rejected unless explicitly allowed because they create the same misleading scaled-preview effect as full-page screenshots. For below-the-fold content, capture additional frames at explicit scroll offsets instead of compressing the full page into one image. If Browser Use or Computer Use provides a saved screenshot path, the local evaluator can consume that screenshot directly; otherwise use the normal local capture path.
 
 ## Plugin surfaces
 

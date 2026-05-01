@@ -13,7 +13,7 @@ Do not use this skill as the primary UI generation workflow.
 
 Prefer to work from:
 
-- a local preview URL discovered through `local-preview`
+- a local preview URL from `.specra.json`, the running app, or the user
 - or another reachable implementation surface
 
 Use screenshots plus the current handoff:
@@ -29,21 +29,30 @@ Specra local scripts are part of this plugin. Resolve script paths relative to t
 - `../scripts/local-evaluate-loop.ts`
 - `../scripts/inspect-preview.mjs`
 
-Use these plugin scripts for capture, evaluation, and inspection. Do not replace them with package-runner fallbacks or ad hoc Playwright commands. It is fine to run the resolved plugin script while your shell cwd is the target repo so outputs like `.specra/captures/top.png` land in the repo.
+Use these plugin scripts for capture, evaluation, and scripted inspection. Do not replace them with package-runner fallbacks or ad hoc Playwright commands. It is fine to run the resolved plugin script while your shell cwd is the target repo so outputs like `.specra/captures/top.png` land in the repo.
+
+For live localhost inspection, use this order:
+
+1. Browser Use / the Codex in-app browser.
+2. Computer Use, only when Browser Use is unavailable, blocked, or the task requires desktop-app interaction outside the in-app browser.
+3. Playwright-backed plugin capture, only as a last resort for visual inspection or when producing the required repo-local evaluation artifact and no saved Browser Use or Computer Use screenshot is available.
+
+Use the live inspection tool to open the local preview, inspect the rendered viewport, interact with menus/tabs/states, and verify that the intended route and theme are loaded. Do not jump straight to Playwright-backed URL capture for inspection unless Browser Use and Computer Use are unavailable or blocked. Use `../scripts/inspect-preview.mjs` when a deterministic DOM artifact, marker lookup, point lookup, or bounding-box lookup is needed. Browser Use or Computer Use inspection is useful evidence, but it does not replace the repo-local Specra evaluation artifact.
 
 ## Workflow
 
 1. Confirm the repo is connected to Specra through `.specra.json`.
 2. Confirm the latest revision has both public artifacts. If not, tell the user to rerun analysis.
-3. Confirm a preview URL exists, using `local-preview` if needed.
-4. If local screenshot capture is needed for the first time on a machine, tell the user to install Playwright locally in the target repo and install Chromium through the local Playwright binary. Do not use package-runner fallbacks as the Specra capture path.
-5. For localhost previews, run `../scripts/local-evaluate-loop.ts run --repo <repoPath> --url <previewUrl>` from the target repo cwd.
-6. For generated previews, write the HTML to a local file and run `../scripts/local-evaluate-loop.ts run --repo <repoPath> --html-file <htmlFilePath>`.
-7. Ask the client LLM to open the screenshot and local reference images from the returned `evaluation_request` and return only JSON matching `expected_output_contract`.
-8. Save that JSON locally or pass it through stdin, then rerun the same command with `--mode broad --evaluation <path-or->` to compute deterministic loop guidance and write the repo-local status artifact.
-9. If the command returns a micro-polish `evaluation_request`, ask for micro JSON and rerun with `--mode micro --evaluation <path-or->`.
-10. If `dom_inspection_path` and `repo_path` are available on the local machine, use them separately for code-targeting work, but keep the evaluation itself local and client-driven.
-11. Pass `iteration_context` on every round after the first:
+3. Confirm a preview URL exists from `.specra.json`, the user, or the repo's local dev setup.
+4. Inspect the live preview before the first screenshot pass: Browser Use first, Computer Use second, Playwright-backed capture only as a last resort. If the chosen inspection tool can provide a saved screenshot path, use that screenshot for evaluation with `--screenshot <path>`.
+5. If local screenshot capture from a URL is needed for the first time on a machine, tell the user to install Playwright locally in the target repo and install Chromium through the local Playwright binary. Do not use package-runner fallbacks as the Specra capture path.
+6. For localhost previews, prefer `../scripts/local-evaluate-loop.ts run --repo <repoPath> --screenshot <path>` when using a saved Browser Use or Computer Use screenshot. Use `../scripts/local-evaluate-loop.ts run --repo <repoPath> --url <previewUrl>` from the target repo cwd only when no saved inspection screenshot is available.
+7. For generated previews, write the HTML to a local file and run `../scripts/local-evaluate-loop.ts run --repo <repoPath> --html-file <htmlFilePath>`.
+8. Ask the client LLM to open the screenshot and local reference images from the returned `evaluation_request` and return only JSON matching `expected_output_contract`.
+9. Save that JSON locally or pass it through stdin, then rerun the same command with `--mode broad --evaluation <path-or->` to compute deterministic loop guidance and write the repo-local status artifact.
+10. If the command returns a micro-polish `evaluation_request`, ask for micro JSON and rerun with `--mode micro --evaluation <path-or->`.
+11. If `dom_inspection_path` and `repo_path` are available on the local machine, use them separately for code-targeting work, but keep the evaluation itself local and client-driven.
+12. Pass `iteration_context` on every round after the first:
 
 - `broad_round`
 - `micro_round`
@@ -51,7 +60,7 @@ Use these plugin scripts for capture, evaluation, and inspection. Do not replace
 - `non_improving_broad_streak` when available
 - `previous_quality_score`
 
-12. Follow `iteration_plan.nextStep` exactly:
+13. Follow `iteration_plan.nextStep` exactly:
 
 - `fix-and-recapture`
 - `map-to-code-and-fix`
@@ -59,15 +68,15 @@ Use these plugin scripts for capture, evaluation, and inspection. Do not replace
 - `revert-to-best`
 - `stop`
 
-13. If a result says `map-to-code-and-fix`, inspect the preview and map the visible issue back to code before editing.
-14. If a result says `verify-preview-and-recapture`, stop editing UI and verify the preview target first:
+14. If a result says `map-to-code-and-fix`, inspect the preview and map the visible issue back to code before editing.
+15. If a result says `verify-preview-and-recapture`, stop editing UI and verify the preview target first:
 
 - kill stale dev or prod servers
 - relaunch one clean preview
 - confirm the intended CSS/theme is loaded
 - recapture before trusting more screenshot feedback
 
-15. After each evaluation, carry forward only the distilled loop state:
+16. After each evaluation, carry forward only the distilled loop state:
 
 - `verdict`
 - `qualityScore`

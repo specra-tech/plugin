@@ -1,9 +1,9 @@
 ---
-name: specra-generate
-description: Primary end-to-end Specra workflow for generating UI from the current DESIGN.md plus theme.css handoff, including the required local screenshot finish gate.
+name: implement-ui
+description: Implement UI from the current DESIGN.md plus theme.css Specra handoff, including code validation and the required local screenshot finish gate.
 ---
 
-# Specra Generate
+# Implement UI
 
 Use this as the default Specra skill for normal UI generation work.
 
@@ -12,17 +12,17 @@ Use this skill when the user wants to:
 - build a new screen from a Specra-connected repo
 - extend an existing product surface while staying on-hand-off
 - turn a greenfield repo into a working UI based on the current references
-- run the full Specra build loop instead of manually assembling `connect-project`, `local-preview`, `evaluate-ui`, and `fix-ui-drift`
+- run the full Specra build loop instead of manually assembling context loading, implementation, evaluation, and code mapping
 
 Do not use this skill for non-UI work or for repos that are not connected to Specra.
 
 ## What this skill owns
 
-`specra-generate` is the primary Specra entrypoint.
+`implement-ui` is the primary Specra entrypoint.
 
 It owns the full workflow:
 
-1. connect the repo
+1. get the project context
 2. load the current handoff
 3. build the UI
 4. run code validation
@@ -31,14 +31,12 @@ It owns the full workflow:
 
 Use the narrower specialist skills only when the task is already reduced:
 
+- `get-context`
+  context loading and readiness checks only
 - `evaluate-ui`
   screenshot-based evaluation only
-- `fix-ui-drift`
-  narrow repair work on an already-close screen
 - `map-ui-to-code`
-  deterministic region-to-file mapping
-
-`build-ui-from-references` remains as a compatibility alias, but this skill is the canonical generation path.
+  deterministic region, selection, or point-to-file mapping
 
 ## Project discovery
 
@@ -71,7 +69,7 @@ Rules:
 - Do not wait for the user to separately ask you to "pull Specra context" in a new chat.
 - Treat `.specra.json` as the durable pointer across sessions. If it exists, use its `projectId` unless the user explicitly gives a different project ID.
 - If a repo also has `.specra/agent-instructions.md`, read it before implementation and treat it as repo-local Specra guidance.
-- If `.specra.json` exists but no durable agent instructions are present, continue with `specra_load_project_context` and mention in closeout that `connect-project` can add durable session instructions.
+- If `.specra.json` exists but no durable agent instructions are present, continue with `specra_load_project_context`.
 
 ## Implementation gate
 
@@ -132,7 +130,15 @@ Specra local scripts are part of this plugin. Resolve script paths relative to t
 - `../scripts/local-evaluate-loop.ts`
 - `../scripts/inspect-preview.mjs`
 
-Use these plugin scripts for capture, evaluation, and inspection. Do not replace them with package-runner fallbacks or ad hoc Playwright commands. It is fine to run the resolved plugin script while your shell cwd is the target repo so outputs like `.specra/captures/top.png` land in the repo.
+Use these plugin scripts for capture, evaluation, and scripted inspection. Do not replace them with package-runner fallbacks or ad hoc Playwright commands. It is fine to run the resolved plugin script while your shell cwd is the target repo so outputs like `.specra/captures/top.png` land in the repo.
+
+For live localhost inspection, use this order:
+
+1. Browser Use / the Codex in-app browser.
+2. Computer Use, only when Browser Use is unavailable, blocked, or the task requires desktop-app interaction outside the in-app browser.
+3. Playwright-backed plugin capture, only as a last resort for visual inspection or when producing the required repo-local evaluation artifact and no saved Browser Use or Computer Use screenshot is available.
+
+Use the live inspection tool to open the local preview, check visible layout and interaction state, navigate tabs/menus, and confirm that the intended page is loaded before code edits. Do not jump straight to Playwright-backed URL capture for inspection unless Browser Use and Computer Use are unavailable or blocked. Use `../scripts/inspect-preview.mjs` when a deterministic DOM artifact, marker lookup, point lookup, or bounding-box lookup is specifically needed. Browser Use or Computer Use inspection does not replace the Specra finish gate: still produce a current repo-local evaluation artifact before claiming alignment. If the chosen inspection tool can provide a saved screenshot path, pass it to `../scripts/local-evaluate-loop.ts run --repo <repoPath> --screenshot <path>`; otherwise use the normal `--url <previewUrl>` capture path.
 
 ## Default generation loop
 
@@ -145,11 +151,11 @@ For normal UI implementation work, use this order:
 4. inspect the repo and pass the TailwindCSS + shadcn/ui implementation gate
 5. generate or edit the UI in code using the loaded handoff as the source of truth
 6. run `specra_validate_generated_ui`
-7. run `../scripts/local-evaluate-loop.ts run --repo <repoPath> --url <previewUrl>` to capture the viewport and produce the broad evaluation request
+7. inspect the live preview with Browser Use when available and ready, falling back to Computer Use only when needed; prefer `../scripts/local-evaluate-loop.ts run --repo <repoPath> --screenshot <path>` if that inspection produced a saved screenshot, otherwise use `../scripts/local-evaluate-loop.ts run --repo <repoPath> --url <previewUrl>` as the last-resort Playwright-backed capture path for the required evaluation artifact
 8. have the client LLM return JSON matching `expected_output_contract`, then rerun the same command with `--mode broad --evaluation <path-or->`
 9. when the run command returns a micro-polish evaluation request, have the client LLM return that JSON and rerun with `--mode micro --evaluation <path-or->`
 10. apply the smallest useful fix, recapture, and re-evaluate if needed
-11. if drift remains, run `specra_suggest_ui_fix`
+11. if a visible issue needs a code owner, use `map-ui-to-code` or call `specra_map_ui_to_code`
 
 Use `specra_map_ui_to_code` when a visible issue needs to be mapped back to a specific file or component.
 
@@ -194,8 +200,8 @@ Manual screenshot review does not satisfy the Specra finish gate by itself. The 
 
 For localhost previews, prefer local capture on the user machine:
 
-1. ensure Playwright is installed locally in the target repo and Chromium has been installed through the local Playwright binary; do not use package-runner fallbacks as the Specra capture path
-2. run `../scripts/local-evaluate-loop.ts run --repo <repoPath> --url <previewUrl>` from the target repo cwd
+1. inspect the live page with Browser Use / the in-app browser when it is available and ready; use Computer Use only as a fallback or for desktop-only interaction. Use Playwright-backed URL capture only after those options are unavailable, blocked, or unable to provide a screenshot for the required evaluation artifact. If no saved screenshot path is available and the script must capture from `--url`, ensure Playwright is installed locally in the target repo and Chromium has been installed through the local Playwright binary
+2. run `../scripts/local-evaluate-loop.ts run --repo <repoPath> --url <previewUrl>` from the target repo cwd, or `../scripts/local-evaluate-loop.ts run --repo <repoPath> --screenshot <path>` when using a saved Browser Use or Computer Use screenshot
 3. have the client LLM return JSON matching `expected_output_contract`
 4. rerun `../scripts/local-evaluate-loop.ts run --repo <repoPath> --url <previewUrl> --mode broad --evaluation <path-or->`
 5. if the result returns a micro-polish request, return micro JSON and rerun with `--mode micro --evaluation <path-or->`

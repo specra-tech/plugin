@@ -1,11 +1,11 @@
 {
   "name": "specra",
   "version": "0.1.0",
-  "description": "Ground UI generation in reference screenshots with Specra MCP. Use specra-generate as the primary end-to-end UI workflow.",
+  "description": "Ground UI generation in reference screenshots with Specra MCP. Use implement-ui as the primary end-to-end UI workflow.",
   "mcpServers": {
     "specra": {
       "url": "https://specra.tech/mcp",
-      "description": "Local Specra MCP server for plugin development. Supports project context loading, UI validation, and the specra-generate local screenshot workflow."
+      "description": "Local Specra MCP server for plugin development. Supports project context loading, UI validation, and the implement-ui local screenshot workflow."
     }
   }
 }

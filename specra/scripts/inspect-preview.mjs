@@ -349,6 +349,100 @@ test("inspect preview", async ({ page }) => {
 
   const result = await page.evaluate(
     ({ selectionBbox: runtimeSelectionBbox, selectionPoint: runtimeSelectionPoint }) => {
+      function isVisibleElement(element) {
+        const rect = element.getBoundingClientRect();
+
+        if (rect.width <= 0 || rect.height <= 0) {
+          return false;
+        }
+
+        const style = window.getComputedStyle(element);
+
+        if (
+          style.display === "none" ||
+          style.visibility === "hidden" ||
+          Number.parseFloat(style.opacity || "1") === 0
+        ) {
+          return false;
+        }
+
+        return true;
+      }
+
+      function normalizeText(value) {
+        return value.replace(/\\s+/g, " ").trim().slice(0, 240);
+      }
+
+      function overlapArea(a, b) {
+        const left = Math.max(a.x, b.x);
+        const right = Math.min(a.x + a.width, b.x + b.width);
+        const top = Math.max(a.y, b.y);
+        const bottom = Math.min(a.y + a.height, b.y + b.height);
+
+        if (right <= left || bottom <= top) {
+          return 0;
+        }
+
+        return (right - left) * (bottom - top);
+      }
+
+      function findNearestSelection(elements) {
+        if (runtimeSelectionPoint) {
+          const containing = elements
+            .filter((element) => {
+              const { bbox } = element;
+              return (
+                runtimeSelectionPoint.x >= bbox.x &&
+                runtimeSelectionPoint.x <= bbox.x + bbox.width &&
+                runtimeSelectionPoint.y >= bbox.y &&
+                runtimeSelectionPoint.y <= bbox.y + bbox.height
+              );
+            })
+            .sort((left, right) => left.area - right.area);
+
+          if (containing[0]) {
+            return containing[0];
+          }
+        }
+
+        if (runtimeSelectionBbox) {
+          const overlapping = elements
+            .map((element) => ({
+              element,
+              overlap: overlapArea(element.bbox, runtimeSelectionBbox),
+            }))
+            .filter((entry) => entry.overlap > 0)
+            .sort((left, right) => right.overlap - left.overlap);
+
+          if (overlapping[0]) {
+            return overlapping[0].element;
+          }
+        }
+
+        const selectionCenter = runtimeSelectionPoint
+          ? runtimeSelectionPoint
+          : runtimeSelectionBbox
+            ? {
+                x: runtimeSelectionBbox.x + runtimeSelectionBbox.width / 2,
+                y: runtimeSelectionBbox.y + runtimeSelectionBbox.height / 2,
+              }
+            : null;
+
+        if (!selectionCenter) {
+          return null;
+        }
+
+        return [...elements]
+          .map((element) => ({
+            distance: Math.hypot(
+              element.center.x - selectionCenter.x,
+              element.center.y - selectionCenter.y,
+            ),
+            element,
+          }))
+          .sort((left, right) => left.distance - right.distance)[0]?.element ?? null;
+      }
+
       const elements = Array.from(document.querySelectorAll("[data-specra-id]"))
         .filter((element) => isVisibleElement(element))
         .map((element) => {

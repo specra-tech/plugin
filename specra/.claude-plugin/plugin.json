@@ -1,7 +1,7 @@
 {
   "name": "specra",
   "version": "0.1.0",
-  "description": "Ground UI generation in reference screenshots with Specra MCP. Use specra-generate as the primary end-to-end UI workflow.",
+  "description": "Ground UI generation in reference screenshots with Specra MCP. Use implement-ui as the primary end-to-end UI workflow.",
   "author": {
     "name": "Specra",
     "url": "https://specra.tech"

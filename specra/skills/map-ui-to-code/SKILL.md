@@ -1,6 +1,6 @@
 ---
 name: map-ui-to-code
-description: Map a visible UI region back to the responsible route, component, or file using deterministic `data-specra-id` markers first, then fall back to repo search only when needed.
+description: Map a visible UI region, selected preview region, point, or bounding box back to the responsible route, component, or file using deterministic `data-specra-id` markers first, then fall back to repo search only when needed.
 ---
 
 # Map UI to Code
@@ -10,13 +10,15 @@ Use this skill when the user asks:
 - what part of the codebase is this area
 - which file renders this section
 - map this visible UI region back to source
+- map this selected preview region back to source
+- find the component behind this button, panel, card, or header
 - instrument this screen so browser feedback can point to code directly
 
-Do not use this skill for broad UI generation. Use the main `build-ui-from-references` skill for that.
+Do not use this skill for broad UI generation. Use `implement-ui` for that.
 
 ## Goal
 
-Find the most likely source file or component for a visible UI region, using deterministic instrumentation whenever available.
+Find the most likely source file or component for a visible UI region, using deterministic instrumentation whenever available. This skill also owns region targeting from a selected preview point or bounding box.
 
 ## Plugin Script Paths
 
@@ -24,7 +26,7 @@ Specra local scripts are part of this plugin. Resolve script paths relative to t
 
 - `../scripts/inspect-preview.mjs`
 
-Use the plugin inspection script. Do not replace it with package-runner fallbacks or ad hoc Playwright commands.
+For live localhost inspection and visual orientation before mapping code, use this order: Browser Use / the Codex in-app browser first, Computer Use second when Browser Use is unavailable or blocked, and Playwright-backed plugin inspection only as a last resort or when a deterministic DOM artifact is required. Use the plugin inspection script when a deterministic DOM artifact, nearest marker, point lookup, or bounding-box lookup is needed. Do not replace plugin scripts with package-runner fallbacks or ad hoc Playwright commands.
 
 ## Preferred method
 
@@ -41,7 +43,7 @@ Examples:
 When these markers exist:
 
 1. inspect the preview locally with `../scripts/inspect-preview.mjs`
-2. identify the relevant `data-specra-id` or selected region
+2. identify the relevant `data-specra-id`, selected region, point, or bounding box
 3. call `specra_map_ui_to_code`
 4. use the returned snippets and file paths to map the region to the component, route, or shared layout that owns it
 
@@ -71,6 +73,8 @@ If the user is working from a live local preview, use the local inspection harne
 - `../scripts/inspect-preview.mjs --html-file <htmlFilePath> --bbox x,y,w,h`
 
 Then use the returned nearest `dataSpecraId` as the exact source anchor before falling back to repo search.
+
+If Browser Use is available and ready, use it first to orient the selected region visually, confirm the intended page/state, and avoid mapping a stale or wrong route. Fall back to Computer Use only when Browser Use is unavailable or blocked. Use Playwright-backed plugin inspection afterward only when you need the deterministic DOM artifact, nearest marker, point lookup, or bounding-box lookup.
 
 ## Fallback method
 
